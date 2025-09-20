@@ -1,0 +1,26 @@
+[workspace]
+resolver = "2"
+members = ["lzma-safe", "xz-cli", "xz-core"]
+
+[workspace.package]
+version = "0.1.1"
+edition = "2021"
+authors = ["Dmitry Semak <dmitry.semak@gmail.com>"]
+license = "MIT"
+repository = "https://github.com/dsemak/xz-rs"
+homepage = "https://github.com/dsemak/xz-rs"
+description = "Modern Rust bindings and utilities for liblzma (XZ Utils)"
+keywords = ["compression", "lzma", "lzma2", "xz"]
+categories = ["api-bindings", "command-line-utilities", "compression"]
+
+[workspace.dependencies]
+tokio = { version = "1.0", features = ["full"] }
+
+[workspace.dependencies.bindgen]
+version = "0.70"
+
+[workspace.dependencies.cc]
+version = "1.0"
+
+[workspace.dependencies.pkg-config]
+version = "0.3"

@@ -1,0 +1,60 @@
+[package]
+name = "xz-cli"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Command-line XZ compression utility"
+repository.workspace = true
+homepage.workspace = true
+
+[[bin]]
+name = "lzcat"
+path = "bin/lzcat/main.rs"
+
+[[bin]]
+name = "lzma"
+path = "bin/lzma/main.rs"
+
+[[bin]]
+name = "unlzma"
+path = "bin/unlzma/main.rs"
+
+[[bin]]
+name = "unxz"
+path = "bin/unxz/main.rs"
+
+[[bin]]
+name = "xz"
+path = "bin/xz/main.rs"
+
+[[bin]]
+name = "xzcat"
+path = "bin/xzcat/main.rs"
+
+[[bin]]
+name = "xzcmp"
+path = "bin/xzcmp/main.rs"
+
+[[bin]]
+name = "xzdec"
+path = "bin/xzdec/main.rs"
+
+[[bin]]
+name = "xzdiff"
+path = "bin/xzdiff/main.rs"
+
+[[bin]]
+name = "xzgrep"
+path = "bin/xzgrep/main.rs"
+
+[[bin]]
+name = "xzless"
+path = "bin/xzless/main.rs"
+
+[[bin]]
+name = "xzmore"
+path = "bin/xzmore/main.rs"
+
+[dependencies]
+tokio = { workspace = true }

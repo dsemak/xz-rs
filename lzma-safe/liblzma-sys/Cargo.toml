@@ -1,0 +1,31 @@
+[package]
+name = "liblzma-sys"
+version = "0.1.1+xz.5.8.1"
+edition = "2021"
+authors = ["Dmitry Semak <dmitru.semak@gmail.com>"]
+description = "Low-level FFI bindings for liblzma (XZ Utils)"
+license = "MIT"
+repository = "https://github.com/dsemak/xz-rs"
+readme = "README.md"
+links = "lzma"
+keywords = ["compression", "ffi", "lzma", "xz"]
+categories = ["api-bindings", "compression"]
+
+[lib]
+name = "liblzma_sys"
+path = "src/lib.rs"
+
+[features]
+default = ["pkg-config", "bindgen"]
+pkg-config = ["dep:pkg-config"]
+bindgen = ["dep:bindgen"]
+
+[dependencies]
+
+[build-dependencies]
+bindgen = { version = "0.69", optional = true }
+cc = "1.0"
+pkg-config = { version = "0.3", optional = true }
+
+[package.metadata.docs.rs]
+features = ["pkg-config", "bindgen"]

@@ -1,0 +1,8 @@
+--- a/README
++++ b/README
+@@ -1,4 +1,5 @@
+ 
+ XZ Utils
+ ========
++# This is an example patch - rename to .patch to enable
+ 

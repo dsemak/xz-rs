@@ -1,0 +1,3 @@
+[submodule "lzma-safe/liblzma-sys/xz"]
+	path = lzma-safe/liblzma-sys/xz
+	url = https://github.com/tukaani-project/xz.git
