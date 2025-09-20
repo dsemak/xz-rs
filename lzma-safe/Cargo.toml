@@ -10,5 +10,6 @@ keywords = ["compression", "lzma", "safe", "xz"]
 categories = ["api-bindings", "compression"]
 
 [dependencies]
+bitflags = "2.0.0"
 liblzma-sys = { path = "liblzma-sys", version = "0.1.0" }
 libc = "0.2"

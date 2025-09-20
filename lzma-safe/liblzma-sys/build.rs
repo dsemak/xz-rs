@@ -289,6 +289,51 @@ fn build_vendored_liblzma(
     patches: &PatchSet,
     allow_unsafe: bool,
 ) -> Result<VendoredBuild, String> {
+    // These feature macros ensure that the corresponding source files expose
+    // the functionality required by the safe wrapper (easy presets, filters,
+    // integrity checks, etc.). Without them the build would succeed but calls
+    // like `lzma_easy_encoder` would report `LZMA_OPTIONS_ERROR` because the
+    // encoder paths remain disabled.
+    const FEATURE_MACROS: &[&str] = &[
+        // Integrity checks
+        "HAVE_CHECK_CRC32",
+        "HAVE_CHECK_CRC64",
+        "HAVE_CHECK_SHA256",
+        // Decoder support
+        "HAVE_DECODERS",
+        "HAVE_DECODER_LZMA1",
+        "HAVE_DECODER_LZMA2",
+        "HAVE_DECODER_DELTA",
+        "HAVE_DECODER_ARM",
+        "HAVE_DECODER_ARM64",
+        "HAVE_DECODER_ARMTHUMB",
+        "HAVE_DECODER_IA64",
+        "HAVE_DECODER_POWERPC",
+        "HAVE_DECODER_SPARC",
+        "HAVE_DECODER_X86",
+        "HAVE_DECODER_RISCV",
+        "HAVE_LZIP_DECODER",
+        // Encoder support (required by the safe API)
+        "HAVE_ENCODERS",
+        "HAVE_ENCODER_LZMA1",
+        "HAVE_ENCODER_LZMA2",
+        "HAVE_ENCODER_DELTA",
+        "HAVE_ENCODER_ARM",
+        "HAVE_ENCODER_ARM64",
+        "HAVE_ENCODER_ARMTHUMB",
+        "HAVE_ENCODER_IA64",
+        "HAVE_ENCODER_POWERPC",
+        "HAVE_ENCODER_SPARC",
+        "HAVE_ENCODER_X86",
+        "HAVE_ENCODER_RISCV",
+        // Match finders used by the default presets
+        "HAVE_MF_BT2",
+        "HAVE_MF_BT3",
+        "HAVE_MF_BT4",
+        "HAVE_MF_HC3",
+        "HAVE_MF_HC4",
+    ];
+
     // Apply patches if any are present
     if !patches.is_empty() {
         patches.apply()?;
@@ -318,6 +363,13 @@ fn build_vendored_liblzma(
     let target_family = env::var("CARGO_CFG_TARGET_FAMILY").unwrap_or_default();
 
     let mut build = cc::Build::new();
+
+    // Enable encoder/decoder support since we bypass liblzma's configure step.
+    for flag in FEATURE_MACROS {
+        build.define(flag, "1");
+    }
+
+    build.define("ASSUME_RAM", "128");
 
     for source in collect_liblzma_sources(Path::new("xz/src/liblzma"))? {
         build.file(source);
@@ -653,7 +705,10 @@ fn generate_bindings(out_dir: &Path, include_paths: &[String], use_system_header
         .blocklist_type("max_align_t")
         // Configuration
         .size_t_is_usize(true)
-        .layout_tests(false);
+        .layout_tests(false)
+        // Disable documentation generation to avoid doctest compilation errors
+        // from C comments that contain text interpreted as Rust code
+        .generate_comments(false);
 
     // Add system header flag if using pkg-config
     if use_system_headers {
