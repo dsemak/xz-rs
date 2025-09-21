@@ -9,6 +9,53 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+/// Feature macros required for liblzma functionality
+///
+/// These macros ensure that the corresponding source files expose
+/// the functionality required by the safe wrapper (easy presets, filters,
+/// integrity checks, etc.). Without them the build would succeed but calls
+/// like `lzma_easy_encoder` would report `LZMA_OPTIONS_ERROR` because the
+/// encoder paths remain disabled.
+const LIBLZMA_FEATURE_MACROS: &[&str] = &[
+    // Integrity checks
+    "HAVE_CHECK_CRC32",
+    "HAVE_CHECK_CRC64",
+    "HAVE_CHECK_SHA256",
+    // Decoder support
+    "HAVE_DECODERS",
+    "HAVE_DECODER_LZMA1",
+    "HAVE_DECODER_LZMA2",
+    "HAVE_DECODER_DELTA",
+    "HAVE_DECODER_ARM",
+    "HAVE_DECODER_ARM64",
+    "HAVE_DECODER_ARMTHUMB",
+    "HAVE_DECODER_IA64",
+    "HAVE_DECODER_POWERPC",
+    "HAVE_DECODER_SPARC",
+    "HAVE_DECODER_X86",
+    "HAVE_DECODER_RISCV",
+    "HAVE_LZIP_DECODER",
+    // Encoder support (required by the safe API)
+    "HAVE_ENCODERS",
+    "HAVE_ENCODER_LZMA1",
+    "HAVE_ENCODER_LZMA2",
+    "HAVE_ENCODER_DELTA",
+    "HAVE_ENCODER_ARM",
+    "HAVE_ENCODER_ARM64",
+    "HAVE_ENCODER_ARMTHUMB",
+    "HAVE_ENCODER_IA64",
+    "HAVE_ENCODER_POWERPC",
+    "HAVE_ENCODER_SPARC",
+    "HAVE_ENCODER_X86",
+    "HAVE_ENCODER_RISCV",
+    // Match finders used by the default presets
+    "HAVE_MF_BT2",
+    "HAVE_MF_BT3",
+    "HAVE_MF_BT4",
+    "HAVE_MF_HC3",
+    "HAVE_MF_HC4",
+];
+
 /// Represents the stability level of a liblzma version
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Stability {
@@ -200,6 +247,8 @@ fn main() {
 /// Main build logic
 fn run() -> Result<(), String> {
     let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR not set by Cargo"));
+    let manifest_dir =
+        PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set by Cargo"));
     let allow_unsafe = env::var_os("LIBLZMA_SYS_ALLOW_UNSAFE").is_some();
     let force_local = env::var_os("LIBLZMA_SYS_FORCE_LOCAL").is_some();
 
@@ -225,7 +274,7 @@ fn run() -> Result<(), String> {
 
     // Fall back to vendored build if system library wasn't suitable
     if include_paths.is_empty() {
-        let vendored = build_vendored_liblzma(&out_dir, &patches, allow_unsafe)?;
+        let vendored = build_vendored_liblzma(&out_dir, &manifest_dir, &patches, allow_unsafe)?;
         include_paths = vendored.include_paths;
         use_system_headers = false;
     }
@@ -283,72 +332,34 @@ fn try_system_liblzma(_allow_unsafe: bool) -> Result<Option<SystemLibrary>, Stri
     Ok(None)
 }
 
-/// Build liblzma from vendored sources
-fn build_vendored_liblzma(
-    out_dir: &Path,
+/// Apply patches and validate version information
+fn prepare_vendored_sources(
+    manifest_dir: &Path,
     patches: &PatchSet,
     allow_unsafe: bool,
-) -> Result<VendoredBuild, String> {
-    // These feature macros ensure that the corresponding source files expose
-    // the functionality required by the safe wrapper (easy presets, filters,
-    // integrity checks, etc.). Without them the build would succeed but calls
-    // like `lzma_easy_encoder` would report `LZMA_OPTIONS_ERROR` because the
-    // encoder paths remain disabled.
-    const FEATURE_MACROS: &[&str] = &[
-        // Integrity checks
-        "HAVE_CHECK_CRC32",
-        "HAVE_CHECK_CRC64",
-        "HAVE_CHECK_SHA256",
-        // Decoder support
-        "HAVE_DECODERS",
-        "HAVE_DECODER_LZMA1",
-        "HAVE_DECODER_LZMA2",
-        "HAVE_DECODER_DELTA",
-        "HAVE_DECODER_ARM",
-        "HAVE_DECODER_ARM64",
-        "HAVE_DECODER_ARMTHUMB",
-        "HAVE_DECODER_IA64",
-        "HAVE_DECODER_POWERPC",
-        "HAVE_DECODER_SPARC",
-        "HAVE_DECODER_X86",
-        "HAVE_DECODER_RISCV",
-        "HAVE_LZIP_DECODER",
-        // Encoder support (required by the safe API)
-        "HAVE_ENCODERS",
-        "HAVE_ENCODER_LZMA1",
-        "HAVE_ENCODER_LZMA2",
-        "HAVE_ENCODER_DELTA",
-        "HAVE_ENCODER_ARM",
-        "HAVE_ENCODER_ARM64",
-        "HAVE_ENCODER_ARMTHUMB",
-        "HAVE_ENCODER_IA64",
-        "HAVE_ENCODER_POWERPC",
-        "HAVE_ENCODER_SPARC",
-        "HAVE_ENCODER_X86",
-        "HAVE_ENCODER_RISCV",
-        // Match finders used by the default presets
-        "HAVE_MF_BT2",
-        "HAVE_MF_BT3",
-        "HAVE_MF_BT4",
-        "HAVE_MF_HC3",
-        "HAVE_MF_HC4",
-    ];
-
+) -> Result<VersionInfo, String> {
     // Apply patches if any are present
     if !patches.is_empty() {
-        patches.apply()?;
+        patches.apply(manifest_dir)?;
     }
 
     // Read and validate version information
-    let version_info = read_vendored_version()?;
+    let version_info = read_vendored_version(manifest_dir)?;
     ensure_version_safe(&version_info.version, allow_unsafe, "vendored liblzma")?;
     ensure_commit_safe(version_info.git_commit.as_deref(), allow_unsafe)?;
 
-    // Configure linking
+    Ok(version_info)
+}
+
+/// Configure cargo linking for static liblzma
+fn configure_linking(out_dir: &Path) {
     println!("cargo:rustc-link-lib=static=lzma");
     println!("cargo:rustc-link-search=native={}", out_dir.display());
+}
 
-    let sizeof_size_t = env::var("CARGO_CFG_TARGET_POINTER_WIDTH")
+/// Get the size of `size_t` for the target platform
+fn get_sizeof_size_t() -> String {
+    env::var("CARGO_CFG_TARGET_POINTER_WIDTH")
         .ok()
         .and_then(|width| match width.as_str() {
             "16" => Some("2".to_string()),
@@ -357,54 +368,95 @@ fn build_vendored_liblzma(
             "128" => Some("16".to_string()),
             _ => None,
         })
-        .unwrap_or_else(|| std::mem::size_of::<usize>().to_string());
+        .unwrap_or_else(|| std::mem::size_of::<usize>().to_string())
+}
 
-    let package_version = format!("\"{}\"", version_display(&version_info));
-    let target_family = env::var("CARGO_CFG_TARGET_FAMILY").unwrap_or_default();
-
-    let mut build = cc::Build::new();
-
-    // Enable encoder/decoder support since we bypass liblzma's configure step.
-    for flag in FEATURE_MACROS {
+/// Configure `cc::Build` with feature macros and basic settings
+fn configure_build_features(build: &mut cc::Build) {
+    // Enable encoder/decoder support since we bypass liblzma's configure step
+    for flag in LIBLZMA_FEATURE_MACROS {
         build.define(flag, "1");
     }
 
     build.define("ASSUME_RAM", "128");
+}
 
-    for source in collect_liblzma_sources(Path::new("xz/src/liblzma"))? {
+/// Add source files to the build
+fn add_source_files(build: &mut cc::Build, manifest_dir: &Path) -> Result<(), String> {
+    let liblzma_src = manifest_dir.join("xz/src/liblzma");
+    for source in collect_liblzma_sources(&liblzma_src)? {
         build.file(source);
     }
+
+    let xz_common = manifest_dir.join("xz/src/common");
+    build
+        .file(xz_common.join("tuklib_physmem.c"))
+        .file(xz_common.join("tuklib_cpucores.c"));
+
+    Ok(())
+}
+
+/// Configure target-specific settings
+fn configure_target_specific(build: &mut cc::Build) {
+    let target_family = env::var("CARGO_CFG_TARGET_FAMILY").unwrap_or_default();
 
     if target_family == "unix" {
         build.define("MYTHREAD_POSIX", "1");
         build.flag_if_supported("-pthread");
         println!("cargo:rustc-link-lib=pthread");
     }
+}
+
+/// Add include directories to the build
+fn add_include_directories(build: &mut cc::Build, manifest_dir: &Path) {
+    build
+        .include(manifest_dir.join("xz/src/common"))
+        .include(manifest_dir.join("xz/src/liblzma/api"))
+        .include(manifest_dir.join("xz/src/liblzma/common"))
+        .include(manifest_dir.join("xz/src/liblzma/lz"))
+        .include(manifest_dir.join("xz/src/liblzma/lzma"))
+        .include(manifest_dir.join("xz/src/liblzma/rangecoder"))
+        .include(manifest_dir.join("xz/src/liblzma/check"))
+        .include(manifest_dir.join("xz/src/liblzma/simple"))
+        .include(manifest_dir.join("xz/src/liblzma/delta"));
+}
+
+/// Configure package information and compiler flags
+fn configure_package_info(build: &mut cc::Build, version_info: &VersionInfo, sizeof_size_t: &str) {
+    let package_version = format!("\"{}\"", version_display(version_info));
 
     build
-        .file("xz/src/common/tuklib_physmem.c")
-        .file("xz/src/common/tuklib_cpucores.c")
-        // Include directories for compilation
-        .include("xz/src/common")
-        .include("xz/src/liblzma/api")
-        .include("xz/src/liblzma/common")
-        .include("xz/src/liblzma/lz")
-        .include("xz/src/liblzma/lzma")
-        .include("xz/src/liblzma/rangecoder")
-        .include("xz/src/liblzma/check")
-        .include("xz/src/liblzma/simple")
-        .include("xz/src/liblzma/delta")
-        // Package information
         .define("PACKAGE_NAME", "\"XZ Utils\"")
         .define("PACKAGE_VERSION", package_version.as_str())
         .define("LZMA_API_STATIC", "1")
-        .define("SIZEOF_SIZE_T", sizeof_size_t.as_str())
+        .define("SIZEOF_SIZE_T", sizeof_size_t)
         .define("HAVE_STDBOOL_H", "1")
         .define("HAVE__BOOL", "1")
         .define("HAVE_STDINT_H", "1")
         .define("_GNU_SOURCE", "1")
         .flag_if_supported("-std=c99")
         .warnings(false);
+}
+
+/// Build liblzma from vendored sources
+fn build_vendored_liblzma(
+    out_dir: &Path,
+    manifest_dir: &Path,
+    patches: &PatchSet,
+    allow_unsafe: bool,
+) -> Result<VendoredBuild, String> {
+    let version_info = prepare_vendored_sources(manifest_dir, patches, allow_unsafe)?;
+
+    configure_linking(out_dir);
+
+    let sizeof_size_t = get_sizeof_size_t();
+    let mut build = cc::Build::new();
+
+    configure_build_features(&mut build);
+    add_source_files(&mut build, manifest_dir)?;
+    configure_target_specific(&mut build);
+    add_include_directories(&mut build, manifest_dir);
+    configure_package_info(&mut build, &version_info, &sizeof_size_t);
 
     match build.try_compile("lzma") {
         Ok(()) => {}
@@ -412,7 +464,10 @@ fn build_vendored_liblzma(
     }
 
     Ok(VendoredBuild {
-        include_paths: vec!["xz/src/liblzma/api".to_string()],
+        include_paths: vec![manifest_dir
+            .join("xz/src/liblzma/api")
+            .to_string_lossy()
+            .to_string()],
     })
 }
 
@@ -428,8 +483,9 @@ fn version_display(info: &VersionInfo) -> String {
 }
 
 /// Read version information from the vendored liblzma headers
-fn read_vendored_version() -> Result<VersionInfo, String> {
-    let header = fs::read_to_string("xz/src/liblzma/api/lzma/version.h")
+fn read_vendored_version(manifest_dir: &Path) -> Result<VersionInfo, String> {
+    let header_path = Path::new(&manifest_dir).join("xz/src/liblzma/api/lzma/version.h");
+    let header = fs::read_to_string(&header_path)
         .map_err(|err| format!("unable to read liblzma version header: {err}"))?;
 
     let version = Version::new(
@@ -440,7 +496,8 @@ fn read_vendored_version() -> Result<VersionInfo, String> {
     );
 
     let commit_suffix = parse_define_string(&header, "LZMA_VERSION_COMMIT");
-    let git_commit = read_git_commit("xz");
+    let xz_dir = Path::new(&manifest_dir).join("xz");
+    let git_commit = read_git_commit(xz_dir.to_str().unwrap());
 
     Ok(VersionInfo {
         version,
@@ -623,11 +680,14 @@ impl PatchSet {
     }
 
     /// Apply all patches in order
-    fn apply(&self) -> Result<(), String> {
+    fn apply(&self, manifest_dir: &Path) -> Result<(), String> {
+        let xz_dir = Path::new(&manifest_dir).join("xz");
         for patch in &self.files {
             println!("cargo:warning=applying patch {}", patch.display());
             let status = Command::new("patch")
-                .args(["--forward", "-p1", "-d", "xz", "-i"])
+                .args(["--forward", "-p1", "-d"])
+                .arg(&xz_dir)
+                .arg("-i")
                 .arg(patch)
                 .status()
                 .map_err(|err| format!("failed to invoke patch for {}: {err}", patch.display()))?;
