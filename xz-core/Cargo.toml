@@ -11,9 +11,12 @@ keywords = ["compression", "lzma", "lzma2", "streaming", "xz"]
 categories = ["api-bindings", "compression"]
 
 [features]
-default = []
+default = ["async"]
+async = ["dep:tokio"]
 
 [dependencies]
+lzma-safe = { path = "../lzma-safe" }
+tokio = { workspace = true, optional = true }
 
 [dev-dependencies]
 

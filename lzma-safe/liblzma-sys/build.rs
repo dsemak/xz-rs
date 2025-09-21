@@ -644,7 +644,7 @@ impl PatchSet {
 fn is_patch_file(path: &Path) -> bool {
     matches!(
         path.extension().and_then(OsStr::to_str),
-        Some("patch") | Some("diff")
+        Some("patch" | "diff")
     )
 }
 
