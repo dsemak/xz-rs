@@ -6,6 +6,7 @@
 use std::env;
 use std::ffi::OsStr;
 use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -485,8 +486,20 @@ fn version_display(info: &VersionInfo) -> String {
 /// Read version information from the vendored liblzma headers
 fn read_vendored_version(manifest_dir: &Path) -> Result<VersionInfo, String> {
     let header_path = Path::new(&manifest_dir).join("xz/src/liblzma/api/lzma/version.h");
-    let header = fs::read_to_string(&header_path)
-        .map_err(|err| format!("unable to read liblzma version header: {err}"))?;
+    let header = fs::read_to_string(&header_path).map_err(|err| {
+        let mut message = format!(
+            "unable to read liblzma version header at {}: {err}",
+            header_path.display()
+        );
+
+        if err.kind() == io::ErrorKind::NotFound {
+            message.push_str(
+                "; ensure the vendored `xz` sources are checked out (run `git submodule update --init --recursive`)",
+            );
+        }
+
+        message
+    })?;
 
     let version = Version::new(
         parse_define_u32(&header, "LZMA_VERSION_MAJOR")?,
