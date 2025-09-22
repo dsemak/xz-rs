@@ -56,5 +56,5 @@ fn roundtrip(data: &[u8]) -> Result<Vec<u8>, lzma_safe::Error> {
 
 ## License
 
-`lzma-safe` is distributed under the terms of the MIT license. The crate depends on the system `liblzma`
-library, which is available under the LGPL v2.1-or-later.
+`lzma-safe` is distributed under the terms of the MIT license. See [`LICENSE`](../LICENSE).
+The crate depends on the system `liblzma` library, which is available under the LGPL v2.1-or-later.
