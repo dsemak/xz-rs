@@ -318,7 +318,6 @@ impl DecompressionOptions {
     }
 
     pub(crate) fn build_decoder(&self) -> Result<Decoder> {
-        let safe_threads = sanitize_threads(self.threads)?;
         let memlimit = self.memlimit.get();
         let memlimit_stop = self
             .memlimit_stop
@@ -334,18 +333,26 @@ impl DecompressionOptions {
 
         match self.mode {
             DecodeMode::Auto => {
-                if matches!(self.threads, Threading::Exact(n) if n > 1) {
-                    return Err(Error::ThreadingUnsupported {
-                        requested: safe_threads,
-                        mode: DecodeMode::Auto,
-                    });
+                if let Threading::Exact(requested) = self.threads {
+                    if requested > 1 {
+                        return Err(Error::ThreadingUnsupported {
+                            requested,
+                            mode: DecodeMode::Auto,
+                        });
+                    }
                 }
 
                 Decoder::new_auto(memlimit, self.flags, stream).map_err(Error::from)
             }
             DecodeMode::Xz => {
+                let threads = match sanitize_threads(self.threads) {
+                    Ok(count) => count.max(1),
+                    Err(Error::InvalidThreadCount { maximum, .. }) => maximum.max(1),
+                    Err(other) => return Err(other),
+                };
+
                 let options = DecoderMtOptions {
-                    threads: safe_threads.max(1),
+                    threads,
                     memlimit,
                     memlimit_stop,
                     flags: self.flags,
@@ -355,11 +362,13 @@ impl DecompressionOptions {
                 Decoder::new_mt(options, stream).map_err(Error::from)
             }
             DecodeMode::Lzma => {
-                if matches!(self.threads, Threading::Exact(n) if n > 1) {
-                    return Err(Error::ThreadingUnsupported {
-                        requested: safe_threads,
-                        mode: DecodeMode::Lzma,
-                    });
+                if let Threading::Exact(requested) = self.threads {
+                    if requested > 1 {
+                        return Err(Error::ThreadingUnsupported {
+                            requested,
+                            mode: DecodeMode::Lzma,
+                        });
+                    }
                 }
 
                 Decoder::new_alone(memlimit, stream).map_err(Error::from)
