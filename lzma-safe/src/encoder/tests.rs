@@ -28,13 +28,11 @@ fn encode_all(encoder: &mut Encoder, data: &[u8]) -> Vec<u8> {
 
     // Finish the stream, allowing liblzma to emit remaining blocks across calls.
     while !encoder.is_finished() {
-        let (_, written_finish) = encoder
-            .process(&[], &mut output, Action::Finish)
-            .unwrap();
+        let (_, written_finish) = encoder.process(&[], &mut output, Action::Finish).unwrap();
 
         if written_finish == 0 {
-            // No additional output produced; nothing more to wait for.
-            break;
+            // Nothing emitted yet; try again until liblzma signals completion.
+            continue;
         }
 
         compressed.extend_from_slice(&output[..written_finish]);
