@@ -17,8 +17,8 @@ fn encode_all(encoder: &mut Encoder, data: &[u8]) -> Vec<u8> {
             .process(remaining_data, &mut output, Action::Run)
             .unwrap();
 
-        if read == 0 {
-            // No progress made, break to avoid infinite loop
+        if read == 0 && written == 0 {
+            // No progress at all; avoid spinning forever
             break;
         }
 
@@ -26,9 +26,19 @@ fn encode_all(encoder: &mut Encoder, data: &[u8]) -> Vec<u8> {
         compressed.extend_from_slice(&output[..written]);
     }
 
-    // Finish the stream
-    let (_, written_finish) = encoder.process(&[], &mut output, Action::Finish).unwrap();
-    compressed.extend_from_slice(&output[..written_finish]);
+    // Finish the stream, allowing liblzma to emit remaining blocks across calls.
+    while !encoder.is_finished() {
+        let (_, written_finish) = encoder
+            .process(&[], &mut output, Action::Finish)
+            .unwrap();
+
+        if written_finish == 0 {
+            // No additional output produced; nothing more to wait for.
+            break;
+        }
+
+        compressed.extend_from_slice(&output[..written_finish]);
+    }
 
     compressed
 }
