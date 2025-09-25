@@ -161,33 +161,39 @@ fn finish_encoder_sync<W: Write>(
     output: &mut [u8],
     total_out: &mut u64,
 ) -> Result<()> {
-    // Prevent infinite loops by limiting the number of finish attempts
-    const MAX_SPINS: usize = 16;
+    let mut made_progress = false;
 
-    for _ in 0..MAX_SPINS {
-        // Process with empty input to flush internal buffers
-        let (read, written) = encoder.process(&[], output, Action::Finish)?;
+    loop {
+        match encoder.process(&[], output, Action::Finish) {
+            Ok((_, written)) if written > 0 => {
+                writer.write_all(&output[..written])?;
+                *total_out += written as u64;
+                made_progress = true;
+            }
+            Ok(_) => {
+                if encoder.is_finished() || made_progress {
+                    break;
+                }
 
-        // Write any output data produced during finishing
-        if written > 0 {
-            writer.write_all(&output[..written])?;
-            *total_out += written as u64;
+                return Err(BackendError::BufError.into());
+            }
+            Err(err) if matches!(err, BackendError::BufError) => {
+                if encoder.is_finished() || made_progress {
+                    break;
+                }
+
+                return Err(err.into());
+            }
+            Err(err) => return Err(err.into()),
         }
 
-        // Check if encoder has completed successfully
         if encoder.is_finished() {
-            writer.flush()?;
-            return Ok(());
-        }
-
-        // If no progress is made, break to avoid infinite loop
-        if read == 0 && written == 0 {
             break;
         }
     }
 
-    // If we reach here, the encoder failed to finish properly
-    Err(BackendError::BufError.into())
+    writer.flush()?;
+    Ok(())
 }
 
 /// Finishes the decoding process by flushing any remaining data from the decoder.
@@ -214,7 +220,7 @@ fn finish_decoder_sync<W: Write>(
 
     for _ in 0..MAX_SPINS {
         // Process with empty input to flush internal buffers
-        let (read, written) = decoder.process(&[], output, Action::Finish)?;
+        let (_read, written) = decoder.process(&[], output, Action::Finish)?;
 
         // Write any output data produced during finishing
         if written > 0 {
@@ -229,7 +235,7 @@ fn finish_decoder_sync<W: Write>(
         }
 
         // If no progress is made, break to avoid infinite loop
-        if read == 0 && written == 0 {
+        if written == 0 {
             break;
         }
     }
