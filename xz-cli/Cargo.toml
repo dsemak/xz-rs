@@ -57,4 +57,7 @@ name = "xzmore"
 path = "bin/xzmore/main.rs"
 
 [dependencies]
+xz-core = { path = "../xz-core" }
 tokio = { workspace = true }
+clap = { version = "4.0", features = ["derive", "color"] }
+anyhow = "1.0"
