@@ -65,6 +65,35 @@ impl Compression {
     }
 }
 
+impl TryFrom<u32> for Compression {
+    type Error = std::io::Error;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Compression::Level0),
+            1 => Ok(Compression::Level1),
+            2 => Ok(Compression::Level2),
+            3 => Ok(Compression::Level3),
+            4 => Ok(Compression::Level4),
+            5 => Ok(Compression::Level5),
+            6 => Ok(Compression::Level6),
+            7 => Ok(Compression::Level7),
+            8 => Ok(Compression::Level8),
+            9 => Ok(Compression::Level9),
+            _ => {
+                if let Ok(value) = u8::try_from(value) {
+                    Ok(Compression::Extreme(value))
+                } else {
+                    Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidInput,
+                        "Invalid compression level",
+                    ))
+                }
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::Compression;
@@ -77,7 +106,7 @@ mod tests {
         assert_eq!(Compression::Level9.to_preset(), 9);
     }
 
-    // Tests the conversion of extreme presets to liblzma preset values.
+    /// Tests the conversion of extreme presets to liblzma preset values.
     #[test]
     fn test_to_preset_extreme() {
         let extreme_flag = 1u32 << 31;
@@ -86,5 +115,48 @@ mod tests {
         assert_eq!(Compression::Extreme(9).to_preset(), 9 | extreme_flag);
         // Values above 9 should be clamped to 9
         assert_eq!(Compression::Extreme(15).to_preset(), 9 | extreme_flag);
+    }
+
+    /// Tests successful conversion from u32 to Compression for standard levels.
+    #[test]
+    fn test_try_from_standard_levels() {
+        assert_eq!(Compression::try_from(0).unwrap(), Compression::Level0);
+        assert_eq!(Compression::try_from(1).unwrap(), Compression::Level1);
+        assert_eq!(Compression::try_from(2).unwrap(), Compression::Level2);
+        assert_eq!(Compression::try_from(3).unwrap(), Compression::Level3);
+        assert_eq!(Compression::try_from(4).unwrap(), Compression::Level4);
+        assert_eq!(Compression::try_from(5).unwrap(), Compression::Level5);
+        assert_eq!(Compression::try_from(6).unwrap(), Compression::Level6);
+        assert_eq!(Compression::try_from(7).unwrap(), Compression::Level7);
+        assert_eq!(Compression::try_from(8).unwrap(), Compression::Level8);
+        assert_eq!(Compression::try_from(9).unwrap(), Compression::Level9);
+    }
+
+    /// Tests conversion from u32 to Compression for extreme levels.
+    #[test]
+    fn test_try_from_extreme_levels() {
+        assert_eq!(Compression::try_from(10).unwrap(), Compression::Extreme(10));
+        assert_eq!(Compression::try_from(50).unwrap(), Compression::Extreme(50));
+        assert_eq!(
+            Compression::try_from(100).unwrap(),
+            Compression::Extreme(100)
+        );
+        assert_eq!(
+            Compression::try_from(255).unwrap(),
+            Compression::Extreme(255)
+        );
+    }
+
+    /// Tests error cases for `TryFrom` conversion.
+    #[test]
+    fn test_try_from_invalid_values() {
+        // Values that don't fit in u8 should return an error
+        assert!(Compression::try_from(256).is_err());
+        assert!(Compression::try_from(1000).is_err());
+        assert!(Compression::try_from(u32::MAX).is_err());
+
+        // Check that the error has the correct kind
+        let error = Compression::try_from(256).unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
     }
 }

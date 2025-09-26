@@ -1,30 +1,18 @@
-//! Simple XZ decompression utility
+//! Simple XZ decompression utility.
 //!
-//! A minimal decompression-only utility for XZ files.
+//! A minimal decompression-only utility for XZ files. Reads from stdin, writes to stdout.
 
 use std::io;
-use std::process;
 
-use anyhow::{Context, Result};
 use xz_core::{options::DecompressionOptions, pipeline::decompress};
 
-fn main() {
-    if let Err(err) = run() {
-        eprintln!("xzdec: {}", err);
-        process::exit(1);
-    }
-}
-
-fn run() -> Result<()> {
-    // xzdec is a minimal utility - no command line arguments
-    // It always reads from stdin and writes to stdout
+fn main() -> io::Result<()> {
     let mut input = io::stdin();
     let mut output = io::stdout();
 
-    // Use default decompression options with reasonable limits
     let options = DecompressionOptions::default();
 
-    let _summary = decompress(&mut input, &mut output, &options).context("Decompression failed")?;
-
-    Ok(())
+    decompress(&mut input, &mut output, &options)
+        .map(|_| ())
+        .map_err(|err| io::Error::new(io::ErrorKind::Other, err))
 }
