@@ -46,7 +46,7 @@ pub(crate) fn sanitize_threads(threads: Threading) -> Result<u32> {
 ///
 /// The maximum safe number of threads as a `u32`. If thread detection fails,
 /// defaults to 1 thread. If the calculated value exceeds `u32::MAX`, returns `u32::MAX`.
-fn get_safe_max_threads() -> u32 {
+pub(crate) fn get_safe_max_threads() -> u32 {
     // Detect available CPU threads, fallback to 1 if detection fails
     let available_threads_count = match std::thread::available_parallelism() {
         Ok(n) => n.get(),

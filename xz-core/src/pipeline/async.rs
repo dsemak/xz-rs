@@ -754,8 +754,9 @@ mod tests {
         let test_data = vec![0x42u8; 2 * MB];
 
         // Configure multithreaded compression explicitly
+        let threads = crate::threading::get_safe_max_threads();
         let options = CompressionOptions::default()
-            .with_threads(Threading::Exact(4))
+            .with_threads(Threading::Exact(threads))
             .with_level(Compression::Level6);
 
         let mut compressed = Vec::new();
@@ -809,7 +810,8 @@ mod tests {
         ];
 
         // Test both single-threaded and multithreaded modes
-        let threadings = [Threading::Exact(1), Threading::Exact(4)];
+        let threads = crate::threading::get_safe_max_threads();
+        let threadings = [Threading::Exact(1), Threading::Exact(threads)];
 
         for (case_name, test_data) in test_cases {
             for &threading in &threadings {
