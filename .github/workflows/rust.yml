@@ -143,16 +143,6 @@ jobs:
             --excl-stop "GRCOV_EXCL_STOP" \
             --output-path site/coverage
 
-          # Move index.html to report.html if it exists
-          if [ -f "site/coverage/index.html" ]; then
-            echo "Coverage report generated successfully"
-            mv site/coverage/index.html site/coverage/report.html
-          else
-            echo "Warning: grcov did not generate index.html"
-            echo "Files in coverage directory:"
-            ls -la site/coverage/ || echo "Coverage directory is empty"
-          fi
-
           # Clean up profraw files
           find target/llvm-cov-target -name "*.profraw" -delete
 
