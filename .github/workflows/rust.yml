@@ -46,26 +46,41 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools
 
       - name: Setup Rust cache
         uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
 
-      - name: Install cargo-tarpaulin
-        run: cargo install cargo-tarpaulin
+      - name: Install grcov
+        run: cargo install grcov
 
       - name: Generate code coverage
-        run: cargo tarpaulin --verbose --all-features --workspace --timeout 120 --out xml
+        run: |
+          set -euo pipefail
 
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
+          export CARGO_INCREMENTAL=0
+          export RUSTFLAGS="-Cinstrument-coverage"
+          export LLVM_PROFILE_FILE="cargo-test-%p-%m.profraw"
+
+          cargo test --all-features
+
+          mkdir -p site/coverage
+          grcov . --binary-path ./target/debug/deps/ -s . -t html --branch --ignore-not-existing --ignore "target/*" --ignore "*/tests/*" -o site/coverage
+
+          find . -name "*.profraw" -delete
+
+          generated_on=$(date -u "+%Y-%m-%d %H:%M UTC")
+          sed "s/{{GENERATED_ON}}/${generated_on}/g" .github/templates/site-index.html > site/index.html
+          sed "s/{{GENERATED_ON}}/${generated_on}/g" .github/templates/coverage-index.html > site/coverage/index.html
+
+      - name: Upload site artifacts
+        uses: actions/upload-artifact@v4
         with:
-          file: cobertura.xml
-          token: ${{ secrets.CODECOV_TOKEN }}
-          fail_ci_if_error: false
-          flags: unittests
-          name: codecov-umbrella
+          name: site-content
+          path: site/
 
   # Build
   build:
@@ -188,8 +203,53 @@ jobs:
       - name: Build documentation
         run: cargo doc --all-features --no-deps
       
+      - name: Prepare documentation for site
+        run: |
+          mkdir -p site/docs
+          cp -r target/doc/* site/docs/
+      
       - name: Upload documentation artifacts
         uses: actions/upload-artifact@v4
         with:
           name: documentation
-          path: target/doc/
+          path: site/docs/
+
+  # Deploy site with code coverage and docs to GitHub Pages
+  deploy-site:
+    name: Deploy Site to GitHub Pages
+    runs-on: ubuntu-latest
+    needs: [docs, coverage]
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Download site artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: site-content
+          path: site/
+
+      - name: Download documentation artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: documentation
+          path: site/docs/
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+        with:
+          enablement: true
+
+      - name: Upload to Pages
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site/
+
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v4
