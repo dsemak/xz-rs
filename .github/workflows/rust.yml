@@ -70,6 +70,8 @@ jobs:
           mkdir -p site/coverage
           grcov . --binary-path ./target/debug/deps/ -s . -t html --branch --ignore-not-existing --ignore "target/*" --ignore "*/tests/*" -o site/coverage
 
+          mv site/coverage/index.html site/coverage/report.html
+
           find . -name "*.profraw" -delete
 
           generated_on=$(date -u "+%Y-%m-%d %H:%M UTC")
@@ -205,14 +207,14 @@ jobs:
       
       - name: Prepare documentation for site
         run: |
-          mkdir -p site/docs
-          cp -r target/doc/* site/docs/
+          mkdir -p site
+          cp -r target/doc site/docs
       
       - name: Upload documentation artifacts
         uses: actions/upload-artifact@v4
         with:
           name: documentation
-          path: site/docs/
+          path: site/
 
   # Deploy site with code coverage and docs to GitHub Pages
   deploy-site:
@@ -233,13 +235,19 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: site-content
-          path: site/
+          path: temp-site/
 
       - name: Download documentation artifacts
         uses: actions/download-artifact@v4
         with:
           name: documentation
-          path: site/docs/
+          path: temp-docs/
+
+      - name: Merge artifacts
+        run: |
+          mkdir -p site
+          cp -r temp-site/* site/
+          cp -r temp-docs/* site/
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
