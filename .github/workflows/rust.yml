@@ -54,25 +54,107 @@ jobs:
         with:
           cache-on-failure: true
 
-      - name: Install grcov
-        run: cargo install grcov
+      - name: Install coverage tools
+        run: |
+          cargo install grcov
+          # Install llvm-profdata (part of llvm-tools)
+          rustup component add llvm-tools-preview
 
       - name: Generate code coverage
         run: |
           set -euo pipefail
 
+          # Add llvm-tools to PATH
+          export PATH="$(rustc --print sysroot)/lib/rustlib/x86_64-unknown-linux-gnu/bin:$PATH"
+          
           export CARGO_INCREMENTAL=0
           export RUSTFLAGS="-Cinstrument-coverage"
-          export LLVM_PROFILE_FILE="cargo-test-%p-%m.profraw"
+          export LLVM_PROFILE_FILE="$(pwd)/target/llvm-cov-target/tbfs-%p-%m.profraw"
+
+          # Create coverage target directory
+          mkdir -p target/llvm-cov-target
 
           cargo test --all-features
 
+          # Find all profraw files
+          echo "Finding profraw files..."
+          profraw_files=$(find target/llvm-cov-target -name "*.profraw" -type f)
+          
+          if [ -z "$profraw_files" ]; then
+            echo "Error: No profraw files found!"
+            exit 1
+          fi
+
+          # Merge profraw files into a single profraw file
+          echo "Merging profraw files..."
+          merged_profraw="target/llvm-cov-target/merged.profraw"
+          
+          # Count profraw files
+          profraw_count=$(echo "$profraw_files" | wc -l)
+          
+          if [ "$profraw_count" -eq 1 ]; then
+            # If only one profraw file, just copy it
+            llvm-profdata merge -output="$merged_profraw" $profraw_files
+          else
+            # Merge multiple profraw files
+            llvm-profdata merge -output="$merged_profraw" $profraw_files
+          fi
+          
+          # Verify merged file exists
+          if [ ! -f "$merged_profraw" ]; then
+            echo "Error: Failed to merge profraw files"
+            exit 1
+          fi
+          
+          echo "Profraw files merged successfully into $merged_profraw"
+
+          # Create coverage directories
           mkdir -p site/coverage
-          grcov . --binary-path ./target/debug/deps/ -s . -t html --branch --ignore-not-existing --ignore "target/*" --ignore "*/tests/*" -o site/coverage
 
-          mv site/coverage/index.html site/coverage/report.html
+          # Collect binary paths
+          binary_paths=""
+          if [ -d "target/debug/deps" ]; then
+            binary_paths="$binary_paths target/debug/deps"
+          fi
+          if [ -d "target/debug" ]; then
+            binary_paths="$binary_paths target/debug"
+          fi
+          
+          if [ -z "$binary_paths" ]; then
+            echo "Error: No binary directories found"
+            exit 1
+          fi
+          
+          echo "Using binary paths: $binary_paths"
 
-          find . -name "*.profraw" -delete
+          # Generate HTML coverage report
+          echo "Generating HTML coverage report..."
+          grcov "$merged_profraw" \
+            --binary-path $binary_paths \
+            --source-dir . \
+            --output-types html \
+            --branch \
+            --ignore-not-existing \
+            --ignore "target/*" \
+            --ignore ".cargo/*" \
+            --ignore "*/tests/*" \
+            --excl-line "GRCOV_EXCL_LINE" \
+            --excl-start "GRCOV_EXCL_START" \
+            --excl-stop "GRCOV_EXCL_STOP" \
+            --output-path site/coverage
+
+          # Move index.html to report.html if it exists
+          if [ -f "site/coverage/index.html" ]; then
+            echo "Coverage report generated successfully"
+            mv site/coverage/index.html site/coverage/report.html
+          else
+            echo "Warning: grcov did not generate index.html"
+            echo "Files in coverage directory:"
+            ls -la site/coverage/ || echo "Coverage directory is empty"
+          fi
+
+          # Clean up profraw files
+          find target/llvm-cov-target -name "*.profraw" -delete
 
           generated_on=$(date -u "+%Y-%m-%d %H:%M UTC")
           sed "s/{{GENERATED_ON}}/${generated_on}/g" .github/templates/site-index.html > site/index.html
