@@ -39,6 +39,31 @@ pub enum Compression {
     Extreme(u8),
 }
 
+impl TryFrom<u32> for Compression {
+    type Error = std::io::Error;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Compression::Level0),
+            1 => Ok(Compression::Level1),
+            2 => Ok(Compression::Level2),
+            3 => Ok(Compression::Level3),
+            4 => Ok(Compression::Level4),
+            5 => Ok(Compression::Level5),
+            6 => Ok(Compression::Level6),
+            7 => Ok(Compression::Level7),
+            8 => Ok(Compression::Level8),
+            9 => Ok(Compression::Level9),
+            _ => u8::try_from(value).map(Compression::Extreme).map_err(|_| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    format!("Invalid compression level: {value}"),
+                )
+            }),
+        }
+    }
+}
+
 impl Compression {
     /// Bit flag to enable "extreme" compression mode.
     const LZMA_PRESET_EXTREME: u32 = 1u32 << 31;

@@ -619,6 +619,7 @@ name = "xz-cli"
 version = "0.1.1"
 dependencies = [
  "tokio",
+ "xz-core",
 ]
 
 [[package]]
