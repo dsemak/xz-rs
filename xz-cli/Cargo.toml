@@ -8,6 +8,10 @@ description = "Command-line XZ compression utility"
 repository.workspace = true
 homepage.workspace = true
 
+[lib]
+name = "xz_cli"
+path = "lib.rs"
+
 [[bin]]
 name = "lzcat"
 path = "bin/lzcat/main.rs"
@@ -58,3 +62,4 @@ path = "bin/xzmore/main.rs"
 
 [dependencies]
 tokio = { workspace = true }
+xz-core = { path = "../xz-core" }
