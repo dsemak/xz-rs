@@ -389,6 +389,15 @@ fn add_source_files(build: &mut cc::Build, manifest_dir: &Path) -> Result<(), St
         build.file(source);
     }
 
+    let target_arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
+    let target_env = env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
+    if target_arch == "x86" && target_env != "msvc" {
+        let check_dir = liblzma_src.join("check");
+        build
+            .file(check_dir.join("crc32_x86.S"))
+            .file(check_dir.join("crc64_x86.S"));
+    }
+
     let xz_common = manifest_dir.join("xz/src/common");
     build
         .file(xz_common.join("tuklib_physmem.c"))
@@ -405,6 +414,42 @@ fn configure_target_specific(build: &mut cc::Build) {
         build.define("MYTHREAD_POSIX", "1");
         build.flag_if_supported("-pthread");
         println!("cargo:rustc-link-lib=pthread");
+    }
+}
+
+/// Configure architecture-specific feature to enable optimizations
+fn configure_cpu_features(build: &mut cc::Build) {
+    let target_arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
+    let target_env = env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
+
+    if target_env != "msvc" {
+        build.define("HAVE_FUNC_ATTRIBUTE_CONSTRUCTOR", "1");
+    }
+
+    match target_arch.as_str() {
+        "x86_64" | "x86" => {
+            build.define("TUKLIB_FAST_UNALIGNED_ACCESS", "1");
+            build.define("HAVE___BUILTIN_BSWAPXX", "1");
+            build.define("HAVE___BUILTIN_ASSUME_ALIGNED", "1");
+            build.define("HAVE_USABLE_CLMUL", "1");
+
+            if target_arch == "x86" && target_env != "msvc" {
+                build.define("HAVE_CRC_X86_ASM", "1");
+            }
+        }
+        "aarch64" => {
+            build.define("TUKLIB_FAST_UNALIGNED_ACCESS", "1");
+            build.define("HAVE___BUILTIN_BSWAPXX", "1");
+            build.define("HAVE___BUILTIN_ASSUME_ALIGNED", "1");
+            build.define("HAVE_ARM64_CRC32", "1");
+        }
+        "loongarch64" => {
+            build.define("TUKLIB_FAST_UNALIGNED_ACCESS", "1");
+            build.define("HAVE___BUILTIN_BSWAPXX", "1");
+            build.define("HAVE___BUILTIN_ASSUME_ALIGNED", "1");
+            build.define("HAVE_LOONGARCH_CRC32", "1");
+        }
+        _ => {}
     }
 }
 
@@ -456,6 +501,7 @@ fn build_vendored_liblzma(
     configure_build_features(&mut build);
     add_source_files(&mut build, manifest_dir)?;
     configure_target_specific(&mut build);
+    configure_cpu_features(&mut build);
     add_include_directories(&mut build, manifest_dir);
     configure_package_info(&mut build, &version_info, &sizeof_size_t);
 
