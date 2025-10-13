@@ -40,10 +40,10 @@ pub mod stream;
 mod error;
 mod ffi;
 
-pub use decoder::Decoder;
+pub use decoder::{Decoder, FileInfoDecoder, IndexDecoder};
 pub use encoder::Encoder;
 pub use error::{Error, Result};
-pub use stream::Stream;
+pub use stream::{BlockInfo, Index, IndexEntry, IndexIterMode, IndexIterator, Stream, StreamInfo};
 
 /// Access to the liblzma version reported by the linked C library.
 pub struct Version;

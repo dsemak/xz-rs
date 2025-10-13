@@ -92,6 +92,22 @@ impl LzmaAllocator {
     }
 }
 
+impl Clone for LzmaAllocator {
+    fn clone(&self) -> Self {
+        match &self._allocator_box {
+            None => {
+                // Default allocator - just create a new one
+                Self::default()
+            }
+            Some(boxed_arc) => {
+                // Clone the Arc to share the allocator
+                let allocator_arc = Arc::clone(boxed_arc.as_ref());
+                Self::from_allocator(allocator_arc)
+            }
+        }
+    }
+}
+
 impl Drop for LzmaAllocator {
     fn drop(&mut self) {
         // The Box<Arc<dyn Allocator>> will be dropped automatically,

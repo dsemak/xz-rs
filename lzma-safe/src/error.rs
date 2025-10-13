@@ -35,6 +35,9 @@ pub enum Error {
     /// Integrity check type is not supported (`LZMA_UNSUPPORTED_CHECK`).
     UnsupportedCheck,
 
+    /// Application must seek to a new position (`LZMA_SEEK_NEEDED`).
+    SeekNeeded,
+
     /// Fallback for error codes not known to this wrapper.
     Unknown(liblzma_sys::lzma_ret),
 }
@@ -51,6 +54,7 @@ impl fmt::Display for Error {
             Error::BufError => write!(f, "No progress is possible"),
             Error::ProgError => write!(f, "Programming error"),
             Error::UnsupportedCheck => write!(f, "Integrity check type is not supported"),
+            Error::SeekNeeded => write!(f, "Application must seek to a new position"),
             Error::Unknown(code) => write!(f, "Unknown error code: {code}"),
         }
     }
@@ -71,6 +75,7 @@ impl From<liblzma_sys::lzma_ret> for Error {
             liblzma_sys::lzma_ret_LZMA_BUF_ERROR => Error::BufError,
             liblzma_sys::lzma_ret_LZMA_PROG_ERROR => Error::ProgError,
             liblzma_sys::lzma_ret_LZMA_UNSUPPORTED_CHECK => Error::UnsupportedCheck,
+            liblzma_sys::lzma_ret_LZMA_SEEK_NEEDED => Error::SeekNeeded,
             other => Error::Unknown(other),
         }
     }
@@ -89,6 +94,7 @@ impl Error {
             Error::BufError => liblzma_sys::lzma_ret_LZMA_BUF_ERROR,
             Error::ProgError => liblzma_sys::lzma_ret_LZMA_PROG_ERROR,
             Error::UnsupportedCheck => liblzma_sys::lzma_ret_LZMA_UNSUPPORTED_CHECK,
+            Error::SeekNeeded => liblzma_sys::lzma_ret_LZMA_SEEK_NEEDED,
             Error::Unknown(code) => code,
         }
     }
@@ -129,6 +135,7 @@ mod test {
                 liblzma_sys::lzma_ret_LZMA_UNSUPPORTED_CHECK,
                 Error::UnsupportedCheck,
             ),
+            (liblzma_sys::lzma_ret_LZMA_SEEK_NEEDED, Error::SeekNeeded),
         ];
 
         for &(code, ref expected_variant) in &cases {
@@ -177,6 +184,7 @@ mod test {
                 Error::UnsupportedCheck,
                 liblzma_sys::lzma_ret_LZMA_UNSUPPORTED_CHECK,
             ),
+            (Error::SeekNeeded, liblzma_sys::lzma_ret_LZMA_SEEK_NEEDED),
             (Error::Unknown(42), 42),
         ];
 
@@ -210,6 +218,7 @@ mod test {
             liblzma_sys::lzma_ret_LZMA_BUF_ERROR,
             liblzma_sys::lzma_ret_LZMA_PROG_ERROR,
             liblzma_sys::lzma_ret_LZMA_UNSUPPORTED_CHECK,
+            liblzma_sys::lzma_ret_LZMA_SEEK_NEEDED,
             99999, // unknown code
         ];
 
