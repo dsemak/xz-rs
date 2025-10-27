@@ -4,14 +4,18 @@ use std::ptr;
 use std::sync::Arc;
 
 mod allocator;
+mod index;
 #[cfg(test)]
 mod tests;
 
 pub use allocator::{Allocator, LzmaAllocator, StdAllocator};
+pub use index::{
+    BlockInfo, Index, IndexEntry, IndexIterMode, IndexIterator, StreamFlags, StreamInfo,
+};
 
 use crate::decoder;
 use crate::encoder;
-use crate::{Decoder, Encoder, Result};
+use crate::{Decoder, Encoder, FileInfoDecoder, IndexDecoder, Result};
 
 /// Safe wrapper around `lzma_stream` with optional custom allocator.
 pub struct Stream {
@@ -60,6 +64,11 @@ impl Stream {
         };
 
         Self { inner, allocator }
+    }
+
+    /// Get a clone of the allocator used by this stream.
+    pub(crate) fn allocator(&self) -> Option<LzmaAllocator> {
+        self.allocator.clone()
     }
 
     /// Create an encoder using the "easy" preset interface.
@@ -228,6 +237,50 @@ impl Stream {
         Decoder::new_alone(memlimit, self)
     }
 
+    /// Create an index decoder for extracting metadata from XZ Index blocks.
+    ///
+    /// This decoder extracts information about streams, blocks, and other metadata
+    /// from XZ Index blocks without decompressing the actual data.
+    ///
+    /// # Parameters
+    ///
+    /// * `memlimit` - Maximum memory usage for the decoder.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::MemError`] if memory allocation fails.
+    /// Returns [`Error::ProgError`] if the decoder is misused.
+    ///
+    /// # Returns
+    ///
+    /// Returns a [`IndexDecoder`] on success.
+    pub fn index_decoder(self, memlimit: u64) -> Result<IndexDecoder> {
+        IndexDecoder::new(memlimit, self)
+    }
+
+    /// Create a file info decoder for extracting metadata from complete XZ files.
+    ///
+    /// This decoder reads Stream Headers, Stream Footers, Index blocks, and
+    /// Stream Padding to build a combined index of all streams in the file.
+    /// It may request the application to seek to different positions in the file.
+    ///
+    /// # Parameters
+    ///
+    /// * `memlimit` - Maximum memory usage for the decoder.
+    /// * `file_size` - Total size of the input XZ file in bytes.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::MemError`] if memory allocation fails.
+    /// Returns [`Error::ProgError`] if the decoder is misused.
+    ///
+    /// # Returns
+    ///
+    /// Returns a [`FileInfoDecoder`] on success.
+    pub fn file_info_decoder(self, memlimit: u64, file_size: u64) -> Result<FileInfoDecoder> {
+        FileInfoDecoder::new(memlimit, file_size, self)
+    }
+
     /// Internal helper exposing the raw `lzma_stream`.
     pub(crate) fn lzma_stream(&mut self) -> &mut liblzma_sys::lzma_stream {
         &mut self.inner
@@ -280,5 +333,12 @@ impl Stream {
     /// Remaining space in the current output buffer.
     pub(crate) fn avail_out(&self) -> usize {
         self.inner.avail_out
+    }
+
+    /// Get the seek position requested by liblzma.
+    ///
+    /// This is used by file info decoder when it returns LZMA_SEEK_NEEDED.
+    pub(crate) fn seek_pos(&self) -> u64 {
+        self.inner.seek_pos
     }
 }
