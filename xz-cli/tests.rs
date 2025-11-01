@@ -161,7 +161,7 @@ fn generate_output_filename_decompress_no_extension() {
     assert!(result.is_err());
 }
 
-/// Test CliConfig default values
+/// Test [`CliConfig`] default values
 #[test]
 fn cli_config_defaults() {
     let config = CliConfig::default();
@@ -175,7 +175,7 @@ fn cli_config_defaults() {
     assert_eq!(config.memory_limit, None);
 }
 
-/// Test OperationMode derives
+/// Test [`OperationMode`] derives
 #[test]
 fn operation_mode_traits() {
     let mode1 = OperationMode::Compress;
@@ -190,7 +190,7 @@ fn operation_mode_traits() {
     assert_eq!(mode1, mode_copy);
 
     // Test Debug
-    let debug_str = format!("{:?}", mode1);
+    let debug_str = format!("{mode1:?}");
     assert!(debug_str.contains("Compress"));
 }
 
@@ -275,7 +275,7 @@ fn compression_levels() {
         };
 
         compress_file(Cursor::new(data), &mut output_vec, &config)
-            .unwrap_or_else(|_| panic!("Compression with level {} should succeed", level));
+            .unwrap_or_else(|_| panic!("Compression with level {level} should succeed"));
 
         assert!(
             !output_vec.is_empty(),

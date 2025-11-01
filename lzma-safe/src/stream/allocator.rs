@@ -44,7 +44,7 @@ pub struct LzmaAllocator {
     /// The C allocator structure passed to liblzma.
     inner: liblzma_sys::lzma_allocator,
     /// Keep the allocator alive. None for default allocator.
-    _allocator_box: Option<Box<Arc<dyn Allocator>>>,
+    allocator_box: Option<Box<Arc<dyn Allocator>>>,
 }
 
 impl Default for LzmaAllocator {
@@ -55,7 +55,7 @@ impl Default for LzmaAllocator {
                 free: None,  // Use liblzma's default free
                 opaque: std::ptr::null_mut(),
             },
-            _allocator_box: None,
+            allocator_box: None,
         }
     }
 }
@@ -77,7 +77,7 @@ impl LzmaAllocator {
                 free: Some(c_free_wrapper),
                 opaque: opaque_ptr,
             },
-            _allocator_box: Some(boxed_allocator),
+            allocator_box: Some(boxed_allocator),
         }
     }
 
@@ -94,7 +94,7 @@ impl LzmaAllocator {
 
 impl Clone for LzmaAllocator {
     fn clone(&self) -> Self {
-        match &self._allocator_box {
+        match &self.allocator_box {
             None => {
                 // Default allocator - just create a new one
                 Self::default()

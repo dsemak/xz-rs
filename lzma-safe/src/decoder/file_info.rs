@@ -38,7 +38,12 @@ impl FileInfoDecoder {
     pub fn new(memlimit: u64, file_size: u64, mut stream: Stream) -> Result<Self> {
         let mut index_ptr_box = Box::new(std::ptr::null_mut());
         let allocator = stream.allocator();
-        crate::ffi::lzma_file_info_decoder(&mut stream, &mut *index_ptr_box, memlimit, file_size)?;
+        crate::ffi::lzma_file_info_decoder(
+            &mut stream,
+            std::ptr::from_mut(&mut *index_ptr_box),
+            memlimit,
+            file_size,
+        )?;
         Ok(Self {
             stream: Some(stream),
             index_ptr_box,
@@ -141,7 +146,7 @@ impl FileInfoDecoder {
     /// The application should then seek to this position in the input file
     /// and provide data starting from this position.
     pub fn seek_pos(&self) -> u64 {
-        self.stream.as_ref().map_or(0, |s| s.seek_pos())
+        self.stream.as_ref().map_or(0, Stream::seek_pos)
     }
 
     /// Returns whether the decoding has finished and the index is available.
@@ -151,7 +156,7 @@ impl FileInfoDecoder {
 
     /// Get the total number of input bytes processed.
     pub fn total_in(&self) -> u64 {
-        self.stream.as_ref().map_or(0, |s| s.total_in())
+        self.stream.as_ref().map_or(0, Stream::total_in)
     }
 
     /// Get the size of the input file.
@@ -188,7 +193,7 @@ impl Drop for FileInfoDecoder {
 mod tests {
     use crate::{Action, Error, Stream};
 
-    /// Test FileInfoDecoder creation and basic API.
+    /// Test [`FileInfoDecoder`] creation and basic API.
     #[test]
     fn file_info_decoder_creation() {
         let decoder = Stream::default().file_info_decoder(u64::MAX, 1024).unwrap();
@@ -206,7 +211,7 @@ mod tests {
         assert_eq!(decoder.file_size(), 1024);
     }
 
-    /// Test FileInfoDecoder with invalid file data returns error.
+    /// Test [`FileInfoDecoder`] with invalid file data returns error.
     #[test]
     fn file_info_decoder_invalid_data() {
         let invalid_data = b"Not a valid XZ file";
@@ -221,7 +226,7 @@ mod tests {
         assert!(result.is_err());
     }
 
-    /// Test FileInfoDecoder process_after_finish returns error.
+    /// Test `FileInfoDecoder::process_after_finish` returns error.
     #[test]
     fn file_info_decoder_process_after_finish() {
         let invalid_data = b"test";
@@ -244,7 +249,7 @@ mod tests {
         }
     }
 
-    /// Test FileInfoDecoder seek_pos method exists and returns value.
+    /// Test `FileInfoDecoder::seek_pos` method exists and returns value.
     #[test]
     fn file_info_decoder_seek_pos() {
         let decoder = Stream::default().file_info_decoder(u64::MAX, 1024).unwrap();
@@ -255,7 +260,7 @@ mod tests {
         assert_eq!(pos, 0);
     }
 
-    /// Test FileInfoDecoder total_in counter.
+    /// Test `FileInfoDecoder::total_in` counter.
     #[test]
     fn file_info_decoder_total_in() {
         let mut decoder = Stream::default().file_info_decoder(u64::MAX, 1024).unwrap();
@@ -270,7 +275,7 @@ mod tests {
         let _ = decoder.total_in();
     }
 
-    /// Test FileInfoDecoder round-trip with Encoder.
+    /// Test `FileInfoDecoder` round-trip with `Encoder`.
     ///
     /// Creates compressed data and verifies file info decoder can process it.
     #[test]
@@ -318,7 +323,7 @@ mod tests {
                 Err(Error::SeekNeeded) => {
                     // Get seek position and adjust consumed
                     let seek_pos = file_info_decoder.seek_pos();
-                    consumed = seek_pos as usize;
+                    consumed = usize::try_from(seek_pos).unwrap_or(compressed.len());
                 }
                 Err(_) => {
                     // Error occurred, but we can still check if index was extracted
@@ -335,7 +340,7 @@ mod tests {
         let _ = file_info_decoder.index();
     }
 
-    /// Test FileInfoDecoder with stream that has zero blocks.
+    /// Test `FileInfoDecoder` with stream that has zero blocks.
     ///
     /// Empty XZ stream with no data blocks.
     #[test]
@@ -373,7 +378,7 @@ mod tests {
                 }
                 Err(Error::SeekNeeded) => {
                     let seek_pos = file_info_decoder.seek_pos();
-                    consumed = seek_pos as usize;
+                    consumed = usize::try_from(seek_pos).unwrap_or(compressed.len());
                 }
                 Err(_) => break,
             }
@@ -427,7 +432,7 @@ mod tests {
         }
     }
 
-    /// Test that index() returns None before finishing.
+    /// Test that `index()` returns `None` before finishing.
     ///
     /// Validates index is only available after successful decode.
     #[test]

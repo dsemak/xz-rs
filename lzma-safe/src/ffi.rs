@@ -94,7 +94,7 @@ pub(crate) fn lzma_alone_decoder(memlimit: u64, stream: &mut Stream) -> Result<(
 
 /// Initialise an index decoder with `lzma_index_decoder`.
 ///
-/// The index will be made available through the index_ptr after decoding completes.
+/// The index will be made available through the `index_ptr` after decoding completes.
 pub(crate) fn lzma_index_decoder(
     stream: &mut Stream,
     index_ptr: *mut *mut liblzma_sys::lzma_index,
@@ -108,7 +108,7 @@ pub(crate) fn lzma_index_decoder(
 
 /// Initialise a file info decoder with `lzma_file_info_decoder`.
 ///
-/// The combined index will be made available through the index_ptr after decoding completes.
+/// The combined index will be made available through the `index_ptr` after decoding completes.
 pub(crate) fn lzma_file_info_decoder(
     stream: &mut Stream,
     index_ptr: *mut *mut liblzma_sys::lzma_index,

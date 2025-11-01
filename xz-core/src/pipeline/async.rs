@@ -795,14 +795,27 @@ mod tests {
             (
                 "random_like",
                 (0..KB)
-                    .map(|i| ((i * 7 + 13) % 256) as u8)
+                    .map(|i| {
+                        let val = (i * 7 + 13) % 256;
+                        #[allow(clippy::cast_possible_truncation)]
+                        let byte = val as u8;
+                        byte
+                    })
                     .collect::<Vec<_>>(),
             ),
             ("highly_compressible", vec![0xAAu8; MB]),
             (
                 "mixed_pattern",
                 (0..MB)
-                    .map(|i| if i % 1000 < 10 { 0xFF } else { (i % 256) as u8 })
+                    .map(|i| {
+                        if i % 1000 < 10 {
+                            0xFF
+                        } else {
+                            #[allow(clippy::cast_possible_truncation)]
+                            let byte = (i % 256) as u8;
+                            byte
+                        }
+                    })
                     .collect::<Vec<_>>(),
             ),
             ("empty", vec![]),
@@ -829,17 +842,13 @@ mod tests {
                 if !test_data.is_empty() {
                     assert!(
                         compression_summary.bytes_written > 0,
-                        "Compression output is empty for case '{}', threading {:?}",
-                        case_name,
-                        threading
+                        "Compression output is empty for case '{case_name}', threading {threading:?}",
                     );
                 }
                 assert_eq!(
                     compression_summary.bytes_read,
                     test_data.len() as u64,
-                    "Compression bytes_read mismatch for case '{}', threading {:?}",
-                    case_name,
-                    threading
+                    "Compression bytes_read mismatch for case '{case_name}', threading {threading:?}",
                 );
 
                 // Decompression and data integrity check
@@ -856,14 +865,11 @@ mod tests {
                 assert_eq!(
                     decompression_summary.bytes_written,
                     test_data.len() as u64,
-                    "Decompression bytes_written mismatch for case '{}', threading {:?}",
-                    case_name,
-                    threading
+                    "Decompression bytes_written mismatch for case '{case_name}', threading {threading:?}",
                 );
                 assert_eq!(
                     &decompressed, test_data,
-                    "Data integrity check failed for case '{}', threading {:?}",
-                    case_name, threading
+                    "Data integrity check failed for case '{case_name}', threading {threading:?}",
                 );
             }
         }

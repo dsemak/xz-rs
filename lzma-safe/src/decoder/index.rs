@@ -33,7 +33,7 @@ impl IndexDecoder {
     pub fn new(memlimit: u64, mut stream: Stream) -> Result<Self> {
         let mut index_ptr: *mut liblzma_sys::lzma_index = std::ptr::null_mut();
         let allocator = stream.allocator();
-        crate::ffi::lzma_index_decoder(&mut stream, &mut index_ptr, memlimit)?;
+        crate::ffi::lzma_index_decoder(&mut stream, std::ptr::from_mut(&mut index_ptr), memlimit)?;
         Ok(Self {
             stream: Some(stream),
             index_ptr,
@@ -137,7 +137,7 @@ impl IndexDecoder {
 
     /// Get the total number of input bytes processed.
     pub fn total_in(&self) -> u64 {
-        self.stream.as_ref().map_or(0, |s| s.total_in())
+        self.stream.as_ref().map_or(0, Stream::total_in)
     }
 
     /// Returns a reference to the extracted index if decoding completed successfully.
@@ -169,7 +169,7 @@ impl Drop for IndexDecoder {
 mod tests {
     use crate::{Action, Error, Stream};
 
-    /// Test IndexDecoder creation and basic API.
+    /// Test [`IndexDecoder`] creation and basic API.
     #[test]
     fn index_decoder_creation() {
         let decoder = Stream::default().index_decoder(u64::MAX).unwrap();
@@ -184,7 +184,7 @@ mod tests {
         assert_eq!(decoder.total_in(), 0);
     }
 
-    /// Test IndexDecoder with invalid index data returns error.
+    /// Test [`IndexDecoder`] with invalid index data returns error.
     #[test]
     fn index_decoder_invalid_data() {
         let invalid_data = b"Not a valid XZ Index block";
@@ -197,7 +197,7 @@ mod tests {
         assert!(result.is_err());
     }
 
-    /// Test IndexDecoder process_after_finish returns error.
+    /// Test [`IndexDecoder`] `process_after_finish` returns error.
     #[test]
     fn index_decoder_process_after_finish() {
         let invalid_data = b"test";
@@ -218,7 +218,7 @@ mod tests {
         }
     }
 
-    /// Test IndexDecoder seek_pos method exists and returns value.
+    /// Test `IndexDecoder` `seek_pos` method exists and returns value.
     #[test]
     fn index_decoder_seek_pos() {
         let mut decoder = Stream::default().index_decoder(u64::MAX).unwrap();
@@ -229,7 +229,7 @@ mod tests {
         assert_eq!(pos, 0);
     }
 
-    /// Test IndexDecoder total_in counter.
+    /// Test `IndexDecoder` `total_in` counter.
     #[test]
     fn index_decoder_total_in() {
         let mut decoder = Stream::default().index_decoder(u64::MAX).unwrap();
@@ -244,7 +244,7 @@ mod tests {
         let _ = decoder.total_in();
     }
 
-    /// Test IndexDecoder round-trip with Encoder.
+    /// Test `IndexDecoder` round-trip with `Encoder`.
     ///
     /// Creates compressed data and verifies index decoder can process it.
     #[test]
@@ -284,7 +284,7 @@ mod tests {
         // instead of just the Index section. This is expected behavior.
     }
 
-    /// Test IndexDecoder with stream that has zero blocks.
+    /// Test `IndexDecoder` with stream that has zero blocks.
     ///
     /// Empty XZ stream with no data blocks.
     #[test]
@@ -329,7 +329,7 @@ mod tests {
         assert!(!decoder.is_finished());
     }
 
-    /// Test seek_pos tracking.
+    /// Test `seek_pos` tracking.
     ///
     /// Verifies seek position is properly tracked.
     #[test]
@@ -347,7 +347,7 @@ mod tests {
         let _ = decoder.seek_pos();
     }
 
-    /// Test total_in tracking during processing.
+    /// Test `total_in` tracking during processing.
     ///
     /// Verifies input byte counter is properly maintained.
     #[test]
@@ -386,7 +386,7 @@ mod tests {
         }
     }
 
-    /// Test decoder with Action::Run vs Action::Finish.
+    /// Test decoder with `Action::Run` vs `Action::Finish`.
     ///
     /// Verifies different actions behave correctly.
     #[test]
@@ -408,7 +408,7 @@ mod tests {
         }
     }
 
-    /// Test that index() returns None before finishing.
+    /// Test that `index()` returns `None` before finishing.
     ///
     /// Validates index is only available after successful decode.
     #[test]

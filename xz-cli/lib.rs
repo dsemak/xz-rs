@@ -188,7 +188,7 @@ pub fn open_input(path: &str) -> io::Result<Box<dyn io::Read>> {
         let file = File::open(path).map_err(|_| {
             io::Error::new(
                 io::ErrorKind::InvalidInput,
-                format!("Failed to open input file '{}'", path),
+                format!("Failed to open input file '{path}'"),
             )
         })?;
         Ok(Box::new(io::BufReader::with_capacity(
@@ -221,7 +221,7 @@ pub fn open_input(path: &str) -> io::Result<Box<dyn io::Read>> {
 /// - The file cannot be created due to permissions, disk space, etc.
 pub fn open_output(path: Option<&Path>, config: &CliConfig) -> io::Result<Box<dyn io::Write>> {
     // Determine if we should write to stdout
-    let use_stdout = config.stdout || path.map(|p| p.as_os_str().is_empty()).unwrap_or(true);
+    let use_stdout = config.stdout || path.is_none_or(|p| p.as_os_str().is_empty());
 
     if use_stdout {
         Ok(Box::new(io::BufWriter::with_capacity(
@@ -253,6 +253,32 @@ pub fn open_output(path: Option<&Path>, config: &CliConfig) -> io::Result<Box<dy
             DEFAULT_BUFFER_SIZE,
             io::stdout(),
         )))
+    }
+}
+
+/// Calculates the compression/decompression ratio as a percentage.
+///
+/// # Parameters
+///
+/// * `numerator` - Output byte count
+/// * `denominator` - Input byte count
+///
+/// # Returns
+///
+/// The ratio as a percentage (0.0-100.0+), or 0.0 if denominator is zero.
+fn calculate_ratio(numerator: u64, denominator: u64) -> f64 {
+    if denominator > 0 {
+        // Use integer division and remainder to avoid direct u64 -> f64 cast
+        // This maintains better precision for large values
+        let quotient = numerator / denominator;
+        let remainder = numerator % denominator;
+
+        f64::from(u32::try_from(quotient).unwrap_or(u32::MAX)) * 100.0
+            + (f64::from(u32::try_from(remainder).unwrap_or(u32::MAX))
+                / f64::from(u32::try_from(denominator).unwrap_or(u32::MAX)))
+                * 100.0
+    } else {
+        0.0
     }
 }
 
@@ -292,7 +318,7 @@ pub fn compress_file(
         let compression_level = xz_core::options::Compression::try_from(level).map_err(|_| {
             io::Error::new(
                 io::ErrorKind::InvalidInput,
-                format!("Invalid compression level: {}", level),
+                format!("Invalid compression level: {level}"),
             )
         })?;
         options = options.with_level(compression_level);
@@ -303,7 +329,7 @@ pub fn compress_file(
         let thread_count = u32::try_from(threads).map_err(|_| {
             io::Error::new(
                 io::ErrorKind::InvalidInput,
-                format!("Thread count {} is too large", threads),
+                format!("Thread count {threads} is too large"),
             )
         })?;
         options = options.with_threads(xz_core::Threading::Exact(thread_count));
@@ -315,11 +341,7 @@ pub fn compress_file(
 
     // Print verbose output if enabled
     if config.verbose {
-        let ratio = if summary.bytes_read > 0 {
-            (summary.bytes_written as f64 / summary.bytes_read as f64) * 100.0
-        } else {
-            0.0
-        };
+        let ratio = calculate_ratio(summary.bytes_written, summary.bytes_read);
 
         eprintln!(
             "Compressed {} bytes to {} bytes ({:.1}% ratio)",
@@ -366,7 +388,7 @@ pub fn decompress_file(
         let thread_count = u32::try_from(threads).map_err(|_| {
             io::Error::new(
                 io::ErrorKind::InvalidInput,
-                format!("Thread count {} is too large", threads),
+                format!("Thread count {threads} is too large"),
             )
         })?;
         options = options.with_threads(xz_core::Threading::Exact(thread_count));
@@ -390,11 +412,7 @@ pub fn decompress_file(
 
     // Print verbose output if enabled
     if config.verbose {
-        let ratio = if summary.bytes_read > 0 {
-            (summary.bytes_written as f64 / summary.bytes_read as f64) * 100.0
-        } else {
-            0.0
-        };
+        let ratio = calculate_ratio(summary.bytes_written, summary.bytes_read);
 
         eprintln!(
             "Decompressed {} bytes to {} bytes ({:.1}% expansion)",
@@ -432,12 +450,12 @@ pub fn cleanup_input_file(input_path: &str, config: &CliConfig) -> io::Result<()
         std::fs::remove_file(input_path).map_err(|err| {
             io::Error::new(
                 err.kind(),
-                format!("Failed to remove input file '{}': {err}", input_path),
+                format!("Failed to remove input file '{input_path}': {err}"),
             )
         })?;
 
         if config.verbose {
-            eprintln!("Removed input file: {}", input_path);
+            eprintln!("Removed input file: {input_path}");
         }
     }
     Ok(())
@@ -514,7 +532,7 @@ pub fn process_file(input_path: &str, config: &CliConfig) -> io::Result<()> {
             // In test mode, decompress but discard output
             decompress_file(input, io::sink(), config)?;
             if config.verbose {
-                eprintln!("Test successful: {}", input_path);
+                eprintln!("Test successful: {input_path}");
             }
         }
     }

@@ -337,7 +337,7 @@ impl Stream {
 
     /// Get the seek position requested by liblzma.
     ///
-    /// This is used by file info decoder when it returns LZMA_SEEK_NEEDED.
+    /// This is used by file info decoder when it returns `LZMA_SEEK_NEEDED`.
     pub(crate) fn seek_pos(&self) -> u64 {
         self.inner.seek_pos
     }

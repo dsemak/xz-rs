@@ -95,6 +95,15 @@ impl Drop for Index {
     }
 }
 
+impl<'a> IntoIterator for &'a Index {
+    type Item = IndexEntry;
+    type IntoIter = IndexIterator<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
 /// Entry returned by [`IndexIterator`].
 #[derive(Debug, Clone)]
 pub enum IndexEntry {
@@ -184,7 +193,7 @@ impl<'a> IndexIterator<'a> {
     }
 }
 
-impl<'a> Iterator for IndexIterator<'a> {
+impl Iterator for IndexIterator<'_> {
     type Item = IndexEntry;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -241,6 +250,9 @@ impl StreamFlags {
     ///
     /// The pointer must be valid and point to a properly initialized `lzma_stream_flags`.
     pub(crate) unsafe fn from_raw(ptr: *const liblzma_sys::lzma_stream_flags) -> Option<Self> {
+        // backward_size is set to LZMA_VLI_UNKNOWN when not available (e.g., from Stream Header)
+        const LZMA_VLI_UNKNOWN: u64 = u64::MAX;
+
         if ptr.is_null() {
             return None;
         }
@@ -250,8 +262,6 @@ impl StreamFlags {
         // Try to convert the check type
         let check = IntegrityCheck::try_from(raw.check).ok()?;
 
-        // backward_size is set to LZMA_VLI_UNKNOWN when not available (e.g., from Stream Header)
-        const LZMA_VLI_UNKNOWN: u64 = u64::MAX;
         let backward_size = if raw.backward_size == LZMA_VLI_UNKNOWN {
             None
         } else {
@@ -312,7 +322,7 @@ mod tests {
 
     use super::*;
 
-    /// Helper function to create a FileInfoDecoder with extracted index.
+    /// Helper function to create a `FileInfoDecoder` with extracted index.
     ///
     /// This compresses the provided `data`, then decodes the resulting file info and index.
     ///
@@ -363,7 +373,10 @@ mod tests {
                 }
                 Err(crate::Error::SeekNeeded) => {
                     // Handle random-access request by updating position.
-                    pos = decoder.seek_pos() as usize;
+                    #[allow(clippy::cast_possible_truncation)]
+                    {
+                        pos = decoder.seek_pos() as usize;
+                    }
                     pending_action = Action::Run; // Always resume with Run after seek.
                 }
                 Err(crate::Error::StreamEnd) => break,
@@ -398,7 +411,7 @@ mod tests {
         assert!(index.file_size() < index.uncompressed_size());
     }
 
-    /// Test Index::checks() returns non-zero value.
+    /// Test `Index::checks()` returns non-zero value.
     #[test]
     fn index_checks_non_zero() {
         let test_data = b"Lazzy dog jumps over the lazy fox";
@@ -409,7 +422,7 @@ mod tests {
         assert_ne!(checks, 0, "Checks should not be zero");
     }
 
-    /// Test IndexIterator with Stream mode using Iterator trait.
+    /// Test `IndexIterator` with Stream mode using Iterator trait.
     #[test]
     fn index_iterator_streams_trait() {
         let test_data = b"Lazzy dog jumps over the lazy fox".repeat(50);
@@ -430,7 +443,7 @@ mod tests {
         }
     }
 
-    /// Test IndexIterator with Block mode using Iterator trait.
+    /// Test `IndexIterator` with Block mode using Iterator trait.
     #[test]
     fn index_iterator_blocks_trait() {
         let test_data = b"Lazzy dog jumps over the lazy fox".repeat(50);
@@ -451,7 +464,7 @@ mod tests {
         }
     }
 
-    /// Test IndexIterator with NonEmptyBlock mode using Iterator trait.
+    /// Test `IndexIterator` with `NonEmptyBlock` mode using Iterator trait.
     #[test]
     fn index_iterator_non_empty_blocks_trait() {
         let test_data = b"Lazzy dog jumps over the lazy fox".repeat(50);
@@ -470,7 +483,7 @@ mod tests {
         }
     }
 
-    /// Test IndexIterator with Any mode using Iterator trait.
+    /// Test `IndexIterator` with Any mode using Iterator trait.
     #[test]
     fn index_iterator_any_trait() {
         let test_data = b"Lazzy dog jumps over the lazy fox".repeat(50);
@@ -497,7 +510,7 @@ mod tests {
         assert!(iter.next().is_none());
     }
 
-    /// Test StreamInfo fields are populated correctly using Iterator trait.
+    /// Test `StreamInfo` fields are populated correctly using Iterator trait.
     #[test]
     fn index_iterator_stream_info_fields() {
         let test_data = b"Lazzy dog jumps over the lazy fox".repeat(100);
@@ -520,7 +533,7 @@ mod tests {
         }
     }
 
-    /// Test BlockInfo fields are populated correctly using Iterator trait.
+    /// Test `BlockInfo` fields are populated correctly using Iterator trait.
     #[test]
     fn index_iterator_block_info_fields() {
         let test_data = b"Lazzy dog jumps over the lazy fox".repeat(100);
@@ -564,7 +577,7 @@ mod tests {
         assert_eq!(count1 as u64, index.block_count());
     }
 
-    /// Test that StreamFlags are properly extracted and parsed.
+    /// Test that `StreamFlags` are properly extracted and parsed.
     #[test]
     fn index_stream_flags() {
         let test_data = b"Lazzy dog jumps over the lazy fox".repeat(10);
@@ -596,7 +609,7 @@ mod tests {
         }
     }
 
-    /// Test IndexIterMode conversion.
+    /// Test `IndexIterMode` conversion.
     #[test]
     fn index_iter_mode_conversion() {
         use liblzma_sys::*;
