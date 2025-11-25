@@ -338,6 +338,73 @@ fn verbose_output() {
         .expect("Compression with verbose should succeed");
 }
 
+/// Test extreme mode applies to default level (6)
+#[test]
+fn extreme_mode_default_level() {
+    use std::io::Cursor;
+
+    let data = b"Test data for compression";
+    let mut output = Vec::new();
+
+    let config = CliConfig {
+        extreme: true,
+        ..Default::default()
+    };
+
+    compress_file(Cursor::new(data), &mut output, &config).unwrap();
+
+    assert!(!output.is_empty());
+
+    // Verify decompression works
+    let mut decompressed = Vec::new();
+    decompress_file(
+        Cursor::new(&output),
+        &mut decompressed,
+        &CliConfig::default(),
+    )
+    .unwrap();
+
+    assert_eq!(&decompressed[..], data);
+}
+
+/// Test extreme mode is a modifier, not level 9
+#[test]
+fn extreme_mode_is_modifier_not_level9() {
+    use std::io::Cursor;
+
+    let data = b"Lorem ipsum dolor sit amet, consectetur adipiscing elit. ".repeat(50);
+
+    // Compress with -0e (extreme level 0)
+    let mut output_0e = Vec::new();
+    compress_file(
+        Cursor::new(&data),
+        &mut output_0e,
+        &CliConfig {
+            level: Some(0),
+            extreme: true,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    // Compress with -9e (extreme level 9)
+    let mut output_9e = Vec::new();
+    compress_file(
+        Cursor::new(&data),
+        &mut output_9e,
+        &CliConfig {
+            level: Some(9),
+            extreme: true,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    // If extreme was just "level 9", both would produce identical results
+    // But since extreme is a modifier, -0e and -9e should differ
+    assert_ne!(output_0e.len(), output_9e.len(),);
+}
+
 /// Test thread count conversion
 #[test]
 fn thread_count_edge_cases() {

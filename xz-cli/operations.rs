@@ -44,24 +44,26 @@ pub fn compress_file(
 ) -> Result<()> {
     let mut options = CompressionOptions::default();
 
-    // Set compression level if specified
-    if let Some(level) = config.level {
-        let compression_level = xz_core::options::Compression::try_from(level)
-            .map_err(|_| Error::InvalidCompressionLevel { level })?;
-        options = options.with_level(compression_level);
-    }
+    // Determine the compression level and apply extreme mode if enabled
+    //
+    // Extreme is a modifier that applies to the selected preset level,
+    // not a separate level.
+    let compression_level = match (config.level, config.extreme) {
+        (Some(level), true) => Compression::Extreme(level as u8),
+        (Some(level), false) => {
+            Compression::try_from(level).map_err(|_| Error::InvalidCompressionLevel { level })?
+        }
+        (None, true) => Compression::Extreme(Compression::default().to_preset() as u8),
+        (None, false) => Compression::default(),
+    };
+
+    options = options.with_level(compression_level);
 
     // Set thread count if specified
     if let Some(threads) = config.threads {
         let thread_count =
             u32::try_from(threads).map_err(|_| Error::InvalidThreadCount { count: threads })?;
         options = options.with_threads(xz_core::Threading::Exact(thread_count));
-    }
-
-    // Set extreme mode if enabled
-    if config.extreme {
-        // In extreme mode, we use the highest compression level
-        options = options.with_level(Compression::Level9);
     }
 
     // Perform compression and handle errors
