@@ -1,3 +1,5 @@
+use std::path::{Path, PathBuf};
+
 use super::*;
 
 /// Test basic memory limit parsing with different units
@@ -150,7 +152,11 @@ fn generate_output_filename_decompress_invalid_extension() {
     let input = Path::new("test.txt");
     let result = generate_output_filename(input, OperationMode::Decompress);
     assert!(result.is_err());
-    assert_eq!(result.unwrap_err().kind(), io::ErrorKind::InvalidInput);
+    // Verify it's the right error variant
+    assert!(matches!(
+        result.unwrap_err(),
+        Error::InvalidExtension { .. }
+    ));
 }
 
 /// Test decompression with no extension fails
@@ -298,7 +304,7 @@ fn invalid_compression_level() {
     };
 
     let err = compress_file(Cursor::new(data), &mut output_vec, &config).unwrap_err();
-    assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
+    assert!(matches!(err, Error::InvalidCompressionLevel { level: 300 }));
 }
 
 /// Test decompression with corrupted data
@@ -311,7 +317,7 @@ fn decompress_corrupted_data() {
     let config = CliConfig::default();
 
     let err = decompress_file(Cursor::new(corrupted_data), &mut output_vec, &config).unwrap_err();
-    assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    assert!(matches!(err, Error::Decompression { .. }));
 }
 
 /// Test verbose flag behavior

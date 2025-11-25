@@ -61,5 +61,6 @@ name = "xzmore"
 path = "bin/xzmore/main.rs"
 
 [dependencies]
+thiserror = "2.0"
 tokio = { workspace = true }
 xz-core = { path = "../xz-core" }
