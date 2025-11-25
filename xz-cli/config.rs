@@ -1,5 +1,8 @@
 //! Configuration types and constants for XZ CLI operations.
 
+use xz_core::config::DecodeMode;
+use xz_core::options::IntegrityCheck;
+
 /// Default buffer size for file I/O operations
 pub const DEFAULT_BUFFER_SIZE: usize = 512 * 1024;
 
@@ -12,12 +15,14 @@ pub const LZMA_EXTENSION: &str = "lzma";
 /// Represents different modes of operation for CLI utilities
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OperationMode {
+    /// Decompress and output to stdout (like cat)
+    Cat,
     /// Compress input data
     Compress,
     /// Decompress input data
     Decompress,
-    /// Decompress and output to stdout (like cat)
-    Cat,
+    /// List information about compressed files
+    List,
     /// Test integrity without extracting
     Test,
 }
@@ -36,12 +41,22 @@ pub struct CliConfig {
     pub stdout: bool,
     /// Verbose output
     pub verbose: bool,
+    /// Quiet mode (suppress warnings)
+    pub quiet: bool,
     /// Compression level (0-9)
     pub level: Option<u32>,
     /// Number of threads to use
     pub threads: Option<usize>,
     /// Memory limit for decompression
     pub memory_limit: Option<u64>,
+    /// Use extreme compression
+    pub extreme: bool,
+    /// File format to use
+    pub format: DecodeMode,
+    /// Integrity check type
+    pub check: IntegrityCheck,
+    /// Machine-readable output
+    pub robot: bool,
 }
 
 impl Default for CliConfig {
@@ -52,9 +67,14 @@ impl Default for CliConfig {
             keep: false,
             stdout: false,
             verbose: false,
+            quiet: false,
             level: None,
             threads: None,
             memory_limit: None,
+            extreme: false,
+            format: DecodeMode::Auto,
+            check: IntegrityCheck::Crc64,
+            robot: false,
         }
     }
 }

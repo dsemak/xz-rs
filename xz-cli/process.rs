@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use crate::config::{CliConfig, OperationMode};
 use crate::error::{Error, Result};
 use crate::io::{generate_output_filename, open_input, open_output};
-use crate::operations::{compress_file, decompress_file};
+use crate::operations::{compress_file, decompress_file, list_file};
 
 /// Removes the input file after successful processing.
 ///
@@ -27,7 +27,7 @@ use crate::operations::{compress_file, decompress_file};
 /// Returns an error if file removal fails.
 pub fn cleanup_input_file(input_path: &str, config: &CliConfig) -> Result<()> {
     // Never delete input file in Test mode
-    if config.mode == OperationMode::Test {
+    if config.mode == OperationMode::Test || config.mode == OperationMode::List {
         return Ok(());
     }
 
@@ -114,9 +114,16 @@ pub fn process_file(input_path: &str, config: &CliConfig) -> Result<()> {
         OperationMode::Test => {
             // In test mode, decompress but discard output
             decompress_file(input, io::sink(), config)?;
-            if config.verbose {
-                eprintln!("Test successful: {input_path}");
+            if config.verbose || config.robot {
+                if config.robot {
+                    println!("OK {}", input_path);
+                } else {
+                    eprintln!("Test successful: {}", input_path);
+                }
             }
+        }
+        OperationMode::List => {
+            list_file(input_path, config)?;
         }
     }
 

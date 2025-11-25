@@ -95,35 +95,13 @@ pub enum Error {
     #[error("Invalid memory limit: {0}")]
     InvalidMemoryLimit(String),
 
-    /// Read error
-    #[error("{path}: Read error: {source}")]
-    ReadError {
+    /// Failed to extract file information
+    #[error("{path}: File format not recognized")]
+    FileInfoExtraction {
         /// Path to the file
         path: String,
-        /// Underlying I/O error
-        #[source]
-        source: io::Error,
-    },
-
-    /// Write error
-    #[error("{path}: Write error: {source}")]
-    WriteError {
-        /// Path to the file
-        path: String,
-        /// Underlying I/O error
-        #[source]
-        source: io::Error,
-    },
-
-    /// Empty filename
-    #[error("Empty filename, skipping")]
-    EmptyFilename,
-
-    /// Memory limit exceeded during decompression
-    #[error("{path}: Memory usage limit reached")]
-    MemoryLimitExceeded {
-        /// Path to the file
-        path: String,
+        /// Error message
+        message: String,
     },
 }
 
@@ -138,20 +116,16 @@ impl From<Error> for io::Error {
             | Error::InvalidOutputFilename { .. }
             | Error::InvalidCompressionLevel { .. }
             | Error::InvalidThreadCount { .. }
-            | Error::InvalidMemoryLimit(_)
-            | Error::EmptyFilename => io::Error::new(io::ErrorKind::InvalidInput, err),
-            Error::Decompression { .. } | Error::Compression { .. } => {
-                io::Error::new(io::ErrorKind::InvalidData, err)
-            }
+            | Error::InvalidMemoryLimit(_) => io::Error::new(io::ErrorKind::InvalidInput, err),
+            Error::Decompression { .. }
+            | Error::Compression { .. }
+            | Error::FileInfoExtraction { .. } => io::Error::new(io::ErrorKind::InvalidData, err),
             Error::OpenInput { source, .. }
             | Error::CreateOutput { source, .. }
-            | Error::RemoveFile { source, .. }
-            | Error::ReadError { source, .. }
-            | Error::WriteError { source, .. } => {
+            | Error::RemoveFile { source, .. } => {
                 // Preserve the original error kind
                 io::Error::new(source.kind(), err)
             }
-            Error::MemoryLimitExceeded { .. } => io::Error::new(io::ErrorKind::OutOfMemory, err),
         }
     }
 }

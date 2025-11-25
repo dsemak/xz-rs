@@ -84,8 +84,8 @@ pub fn generate_output_filename(input: &Path, mode: OperationMode) -> Result<Pat
             let parent = input.parent().unwrap_or_else(|| Path::new("."));
             Ok(parent.join(stem))
         }
-        // No output file for test mode
-        OperationMode::Test => Ok(PathBuf::new()),
+        // No output file for test mode or list mode
+        OperationMode::Test | OperationMode::List => Ok(PathBuf::new()),
     }
 }
 

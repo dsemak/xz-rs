@@ -17,6 +17,9 @@ use crate::decoder;
 use crate::encoder;
 use crate::{Decoder, Encoder, FileInfoDecoder, IndexDecoder, Result};
 
+/// Size of the XZ stream header in bytes (12 bytes).
+pub const HEADER_SIZE: usize = liblzma_sys::LZMA_STREAM_HEADER_SIZE as usize;
+
 /// Safe wrapper around `lzma_stream` with optional custom allocator.
 pub struct Stream {
     /// The raw `lzma_stream` struct from liblzma.

@@ -1,40 +1,17 @@
 //! Compression and decompression operations for XZ CLI.
 
+use std::fs::File;
 use std::io;
 
 use xz_core::{
-    options::{CompressionOptions, DecompressionOptions},
+    file_info,
+    options::{Compression, CompressionOptions, DecompressionOptions},
     pipeline::{compress, decompress},
+    ratio,
 };
 
 use crate::config::CliConfig;
 use crate::error::{Error, Result};
-
-/// Calculates the compression/decompression ratio as a percentage.
-///
-/// # Parameters
-///
-/// * `numerator` - Output byte count
-/// * `denominator` - Input byte count
-///
-/// # Returns
-///
-/// The ratio as a percentage (0.0-100.0+), or 0.0 if denominator is zero.
-fn calculate_ratio(numerator: u64, denominator: u64) -> f64 {
-    if denominator > 0 {
-        // Use integer division and remainder to avoid direct u64 -> f64 cast
-        // This maintains better precision for large values
-        let quotient = numerator / denominator;
-        let remainder = numerator % denominator;
-
-        f64::from(u32::try_from(quotient).unwrap_or(u32::MAX)) * 100.0
-            + (f64::from(u32::try_from(remainder).unwrap_or(u32::MAX))
-                / f64::from(u32::try_from(denominator).unwrap_or(u32::MAX)))
-                * 100.0
-    } else {
-        0.0
-    }
-}
 
 /// Compresses data from an input reader to an output writer.
 ///
@@ -81,20 +58,35 @@ pub fn compress_file(
         options = options.with_threads(xz_core::Threading::Exact(thread_count));
     }
 
+    // Set extreme mode if enabled
+    if config.extreme {
+        // In extreme mode, we use the highest compression level
+        options = options.with_level(Compression::Level9);
+    }
+
     // Perform compression and handle errors
     let summary = compress(&mut input, &mut output, &options).map_err(|e| Error::Compression {
         path: "(input)".to_string(),
         message: e.to_string(),
     })?;
 
-    // Print verbose output if enabled
-    if config.verbose {
-        let ratio = calculate_ratio(summary.bytes_written, summary.bytes_read);
+    // Print output if verbose or robot mode is enabled
+    if config.verbose || config.robot {
+        let ratio = ratio(summary.bytes_written, summary.bytes_read);
 
-        eprintln!(
-            "Compressed {} bytes to {} bytes ({:.1}% ratio)",
-            summary.bytes_read, summary.bytes_written, ratio
-        );
+        if config.robot {
+            // Machine-readable output for robot mode
+            println!(
+                "{} {} {:.1}",
+                summary.bytes_read, summary.bytes_written, ratio
+            );
+        } else {
+            // Human-readable output for verbose mode
+            eprintln!(
+                "Compressed {} bytes to {} bytes ({:.1}% ratio)",
+                summary.bytes_read, summary.bytes_written, ratio
+            );
+        }
     }
 
     Ok(())
@@ -146,6 +138,9 @@ pub fn decompress_file(
         }
     }
 
+    // Set decode mode based on format
+    options = options.with_mode(config.format);
+
     // Perform decompression and handle errors
     let summary =
         decompress(&mut input, &mut output, &options).map_err(|e| Error::Decompression {
@@ -153,13 +148,132 @@ pub fn decompress_file(
             message: e.to_string(),
         })?;
 
-    // Print verbose output if enabled
-    if config.verbose {
-        let ratio = calculate_ratio(summary.bytes_written, summary.bytes_read);
+    // Print output if verbose or robot mode is enabled
+    if config.verbose || config.robot {
+        let ratio = ratio(summary.bytes_written, summary.bytes_read);
 
-        eprintln!(
-            "Decompressed {} bytes to {} bytes ({:.1}% expansion)",
-            summary.bytes_read, summary.bytes_written, ratio
+        if config.robot {
+            // Machine-readable output for robot mode
+            println!(
+                "{} {} {:.1}",
+                summary.bytes_read, summary.bytes_written, ratio
+            );
+        } else {
+            // Human-readable output for verbose mode
+            eprintln!(
+                "Decompressed {} bytes to {} bytes ({:.1}% expansion)",
+                summary.bytes_read, summary.bytes_written, ratio
+            );
+        }
+    }
+
+    Ok(())
+}
+
+/// Lists information about an XZ compressed file.
+///
+/// Extracts and displays metadata about the compressed file including:
+///
+/// - Number of streams and blocks
+/// - Compressed and uncompressed sizes
+/// - Compression ratio
+/// - Integrity check types
+///
+/// In verbose mode, shows detailed information about each stream and block.
+///
+/// # Parameters
+///
+/// * `input_path` - Path to the input XZ file
+/// * `config` - CLI configuration specifying verbosity and output format
+///
+/// # Returns
+///
+/// Returns `Ok(())` if the file was successfully analyzed.
+///
+/// # Errors
+///
+/// Returns an error if:
+///
+/// - The file cannot be opened or read
+/// - The file is not a valid XZ file
+/// - Memory limit is exceeded during analysis
+pub fn list_file(input_path: &str, config: &CliConfig) -> Result<()> {
+    // Open the file
+    let mut file = File::open(input_path).map_err(|source| Error::OpenInput {
+        path: input_path.to_string(),
+        source,
+    })?;
+
+    // Extract file info
+    let memlimit = config.memory_limit.and_then(std::num::NonZeroU64::new);
+    let info = file_info::extract_file_info(&mut file, memlimit).map_err(|e| {
+        Error::FileInfoExtraction {
+            path: input_path.to_string(),
+            message: e.to_string(),
+        }
+    })?;
+
+    if config.robot {
+        // Machine-readable output
+        println!(
+            "{}\t{}\t{}\t{}\t{:.3}\t{}",
+            input_path,
+            info.stream_count(),
+            info.block_count(),
+            info.file_size(),
+            info.uncompressed_size(),
+            ratio(info.file_size(), info.uncompressed_size())
+        );
+    } else if config.verbose {
+        // Detailed human-readable output
+        println!("File: {}", input_path);
+        println!("  Streams:           {}", info.stream_count());
+        println!("  Blocks:            {}", info.block_count());
+        println!("  Compressed size:   {} bytes", info.file_size());
+        println!("  Uncompressed size: {} bytes", info.uncompressed_size());
+        println!(
+            "  Ratio:             {:.2}%",
+            ratio(info.file_size(), info.uncompressed_size())
+        );
+        println!("  Check:             0x{:08x}", info.checks());
+
+        // Show detailed stream info
+        for (idx, stream) in info.streams().iter().enumerate() {
+            println!("\n  Stream {}:", idx + 1);
+            println!("    Blocks:          {}", stream.block_count);
+            println!("    Compressed:      {} bytes", stream.compressed_size);
+            println!("    Uncompressed:    {} bytes", stream.uncompressed_size);
+            println!(
+                "    Ratio:           {:.2}%",
+                ratio(stream.compressed_size, stream.uncompressed_size)
+            );
+            println!("    Padding:         {} bytes", stream.padding);
+        }
+
+        // Show detailed block info
+        println!("\n  Blocks:");
+        for block in info.blocks() {
+            println!(
+                "    Block {} (in stream {}):",
+                block.number_in_file, block.number_in_stream
+            );
+            println!("      Compressed:    {} bytes", block.total_size);
+            println!("      Uncompressed:  {} bytes", block.uncompressed_size);
+            println!(
+                "      Ratio:         {:.2}%",
+                ratio(block.total_size, block.uncompressed_size) * 100.0
+            );
+        }
+    } else {
+        // Compact output
+        println!(
+            "{}: {} streams, {} blocks, {}/{} bytes, {:.1}%",
+            input_path,
+            info.stream_count(),
+            info.block_count(),
+            info.file_size(),
+            info.uncompressed_size(),
+            ratio(info.file_size(), info.uncompressed_size())
         );
     }
 
