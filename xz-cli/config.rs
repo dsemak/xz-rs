@@ -59,6 +59,8 @@ pub struct CliConfig {
     pub robot: bool,
     /// Custom suffix for compressed files
     pub suffix: Option<String>,
+    /// Decompress only the first stream
+    pub single_stream: bool,
 }
 
 impl Default for CliConfig {
@@ -78,6 +80,7 @@ impl Default for CliConfig {
             check: IntegrityCheck::Crc64,
             robot: false,
             suffix: None,
+            single_stream: false,
         }
     }
 }

@@ -61,6 +61,7 @@ impl XzCatOpts {
             check: xz_core::options::IntegrityCheck::Crc64,
             robot: false,
             suffix: None,
+            single_stream: false,
         }
     }
 

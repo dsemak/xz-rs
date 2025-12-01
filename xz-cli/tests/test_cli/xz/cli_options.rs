@@ -287,3 +287,53 @@ add_test!(custom_suffix_already_present, async {
         .await;
     assert!(!output.status.success());
 });
+
+// Test --single-stream option decompresses only the first stream
+add_test!(single_stream_option, async {
+    use std::io::Write;
+
+    const FILE_NAME: &str = "single_stream_test.txt";
+    const FILE_NAME_2: &str = "single_stream_test2.txt";
+    let data1 = b"First stream data";
+    let data2 = b"Second stream data";
+
+    let mut fixture = Fixture::with_file(FILE_NAME, data1);
+    let mut fixture2 = Fixture::with_file(FILE_NAME_2, data2);
+
+    let file_path = fixture.path(FILE_NAME);
+    let file_path_2 = fixture2.path(FILE_NAME_2);
+    let compressed_path = fixture.compressed_path(FILE_NAME);
+    let compressed_path_2 = fixture2.compressed_path(FILE_NAME_2);
+
+    // Compress both files
+    let output = fixture.run_cargo("xz", &["-k", &file_path]).await;
+    assert!(output.status.success());
+    let output = fixture2.run_cargo("xz", &["-k", &file_path_2]).await;
+    assert!(output.status.success());
+
+    // Create a concatenated stream by appending the two compressed files
+    let concat_path = fixture.path("concatenated.xz");
+    let compressed1 = std::fs::read(&compressed_path).unwrap();
+    let compressed2 = std::fs::read(&compressed_path_2).unwrap();
+    let mut concat_file = std::fs::File::create(&concat_path).unwrap();
+    concat_file.write_all(&compressed1).unwrap();
+    concat_file.write_all(&compressed2).unwrap();
+    drop(concat_file);
+
+    // Decompress with --single-stream (should only decompress first stream)
+    let output = fixture
+        .run_cargo("xz", &["-d", "--single-stream", "-c", &concat_path])
+        .await;
+    assert!(output.status.success());
+
+    // Output should only contain first stream data
+    assert_eq!(output.stdout_raw, data1);
+
+    // Decompress without --single-stream (should decompress both streams)
+    let output = fixture.run_cargo("xz", &["-d", "-c", &concat_path]).await;
+    assert!(output.status.success());
+
+    // Output should contain both stream data concatenated
+    let expected_both = [data1.as_slice(), data2.as_slice()].concat();
+    assert_eq!(output.stdout_raw, expected_both);
+});

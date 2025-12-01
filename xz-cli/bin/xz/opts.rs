@@ -131,6 +131,10 @@ pub struct XzOpts {
     #[arg(short = 'S', long = "suffix", value_name = "SUFFIX")]
     pub suffix: Option<String>,
 
+    /// Decompress only the first stream, ignore remaining input
+    #[arg(long = "single-stream")]
+    pub single_stream: bool,
+
     /// Display long help and exit
     #[arg(short = 'H', long = "long-help", action = clap::ArgAction::Help)]
     _long_help: Option<bool>,
@@ -216,6 +220,7 @@ impl XzOpts {
             check: self.check_type()?,
             robot: self.robot,
             suffix: self.suffix.clone(),
+            single_stream: self.single_stream,
         })
     }
 }
@@ -255,6 +260,7 @@ mod tests {
             files0_from_file: None,
             robot: false,
             suffix: None,
+            single_stream: false,
             _long_help: None,
         }
     }

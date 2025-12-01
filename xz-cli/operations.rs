@@ -5,7 +5,7 @@ use std::io;
 
 use xz_core::{
     file_info,
-    options::{Compression, CompressionOptions, DecompressionOptions},
+    options::{Compression, CompressionOptions, DecompressionOptions, Flags},
     pipeline::{compress, decompress},
     ratio,
 };
@@ -142,6 +142,17 @@ pub fn decompress_file(
 
     // Set decode mode based on format
     options = options.with_mode(config.format);
+
+    // Configure stream handling mode
+    //
+    // By default (single_stream = false), enable CONCATENATED flag to process
+    // multiple concatenated streams in a single file (standard xz behavior).
+    // When single_stream is enabled, use empty flags to stop after the first stream.
+    options = options.with_flags(if config.single_stream {
+        Flags::empty()
+    } else {
+        Flags::CONCATENATED
+    });
 
     // Perform decompression and handle errors
     let summary =

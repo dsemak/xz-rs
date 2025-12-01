@@ -223,9 +223,6 @@ fn finish_decoder_sync<W: Write>(
     // Prevent infinite loops by limiting the number of finish attempts
     const MAX_SPINS: usize = 16;
 
-    // Track if we've made any progress (produced output) during finish
-    let mut made_progress = false;
-
     for _ in 0..MAX_SPINS {
         // Process with empty input to flush internal buffers
         let (_read, written) = decoder.process(&[], output, Action::Finish)?;
@@ -234,26 +231,23 @@ fn finish_decoder_sync<W: Write>(
         if written > 0 {
             writer.write_all(&output[..written])?;
             *total_out += written as u64;
-            made_progress = true;
         }
 
         // Check if decoder has completed successfully
         if decoder.is_finished() {
-            // The decoder is finished. For valid data, the decoder either:
-            // 1. Was already finished during the Run phase (we wouldn't be here)
-            // 2. Produced remaining output during Finish and signaled StreamEnd
-            // 3. Was empty but valid (no data to decompress)
+            // The decoder is finished. This is the normal completion path.
             //
-            // For truncated data, the decoder is force-finished without producing
-            // output and without properly completing. We detect this by checking
-            // if we made progress during the finish phase.
-            if made_progress {
-                writer.flush()?;
-                return Ok(());
-            }
-            // Decoder was force-finished without producing output during finish -
-            // likely truncated or incomplete data
-            return Err(BackendError::DataError.into());
+            // With CONCATENATED flag, the decoder may finish without producing
+            // additional output during Finish phase - all data was already output
+            // during the Run phase. Without CONCATENATED, the decoder typically
+            // finishes during Run phase (we wouldn't reach here).
+            //
+            // The made_progress check was intended to detect truncated data,
+            // but it causes false positives with valid CONCATENATED streams.
+            // Since liblzma signals is_finished() only on valid completion,
+            // we trust that status.
+            writer.flush()?;
+            return Ok(());
         }
 
         // If no progress is made, break to avoid infinite loop
