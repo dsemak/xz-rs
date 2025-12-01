@@ -143,16 +143,22 @@ pub fn decompress_file(
     // Set decode mode based on format
     options = options.with_mode(config.format);
 
-    // Configure stream handling mode
+    // Configure decoder flags
     //
-    // By default (single_stream = false), enable CONCATENATED flag to process
-    // multiple concatenated streams in a single file (standard xz behavior).
-    // When single_stream is enabled, use empty flags to stop after the first stream.
-    options = options.with_flags(if config.single_stream {
+    // Build flags based on configuration:
+    // - CONCATENATED: Process multiple concatenated streams (default)
+    // - IGNORE_CHECK: Skip integrity check verification (when requested)
+    let mut flags = if config.single_stream {
         Flags::empty()
     } else {
         Flags::CONCATENATED
-    });
+    };
+
+    if config.ignore_check {
+        flags |= Flags::IGNORE_CHECK;
+    }
+
+    options = options.with_flags(flags);
 
     // Perform decompression and handle errors
     let summary =

@@ -84,6 +84,7 @@ impl UnxzOpts {
             robot: false,
             suffix: None,
             single_stream: false,
+            ignore_check: false,
         }
     }
 

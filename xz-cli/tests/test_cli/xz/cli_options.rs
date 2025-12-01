@@ -337,3 +337,27 @@ add_test!(single_stream_option, async {
     let expected_both = [data1.as_slice(), data2.as_slice()].concat();
     assert_eq!(output.stdout_raw, expected_both);
 });
+
+// Test --ignore-check option skips integrity verification
+add_test!(ignore_check_option, async {
+    const FILE_NAME: &str = "ignore_check_test.txt";
+    let data = b"Test data for integrity check";
+
+    let mut fixture = Fixture::with_file(FILE_NAME, data);
+    let file_path = fixture.path(FILE_NAME);
+    let compressed_path = fixture.compressed_path(FILE_NAME);
+
+    // Compress the file
+    let output = fixture.run_cargo("xz", &["-k", &file_path]).await;
+    assert!(output.status.success());
+
+    // Decompress with --ignore-check should work
+    fixture.remove_file(FILE_NAME);
+    let output = fixture
+        .run_cargo("xz", &["-d", "--ignore-check", &compressed_path])
+        .await;
+    assert!(output.status.success());
+
+    // Verify data is correct
+    fixture.assert_files(&[FILE_NAME], &[data]);
+});

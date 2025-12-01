@@ -61,6 +61,8 @@ pub struct CliConfig {
     pub suffix: Option<String>,
     /// Decompress only the first stream
     pub single_stream: bool,
+    /// Skip integrity check verification
+    pub ignore_check: bool,
 }
 
 impl Default for CliConfig {
@@ -81,6 +83,7 @@ impl Default for CliConfig {
             robot: false,
             suffix: None,
             single_stream: false,
+            ignore_check: false,
         }
     }
 }

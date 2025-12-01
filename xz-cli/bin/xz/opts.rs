@@ -135,6 +135,10 @@ pub struct XzOpts {
     #[arg(long = "single-stream")]
     pub single_stream: bool,
 
+    /// Don't verify the integrity check when decompressing
+    #[arg(long = "ignore-check")]
+    pub ignore_check: bool,
+
     /// Display long help and exit
     #[arg(short = 'H', long = "long-help", action = clap::ArgAction::Help)]
     _long_help: Option<bool>,
@@ -221,6 +225,7 @@ impl XzOpts {
             robot: self.robot,
             suffix: self.suffix.clone(),
             single_stream: self.single_stream,
+            ignore_check: self.ignore_check,
         })
     }
 }
@@ -261,6 +266,7 @@ mod tests {
             robot: false,
             suffix: None,
             single_stream: false,
+            ignore_check: false,
             _long_help: None,
         }
     }
