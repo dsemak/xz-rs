@@ -193,3 +193,97 @@ add_test!(stdout_long_option, async {
     assert!(fixture.file_exists(FILE_NAME));
     assert!(!output.stdout.is_empty());
 });
+
+// Test -S/--suffix option
+add_test!(custom_suffix_option, async {
+    const FILE_NAME: &str = "suffix_test.txt";
+    const CUSTOM_SUFFIX: &str = "custom";
+    let data = generate_random_data(KB);
+
+    let mut fixture = Fixture::with_file(FILE_NAME, &data);
+    let file_path = fixture.path(FILE_NAME);
+    let custom_compressed_name = format!("{}.{}", FILE_NAME, CUSTOM_SUFFIX);
+    let custom_compressed = fixture.path(&custom_compressed_name);
+
+    // Compress with custom suffix
+    let output = fixture
+        .run_cargo("xz", &["-S", CUSTOM_SUFFIX, "-k", &file_path])
+        .await;
+    assert!(output.status.success());
+
+    // Check that the file with custom suffix was created
+    assert!(fixture.file_exists(&custom_compressed_name));
+
+    // Original file should still exist (we used -k)
+    assert!(fixture.file_exists(FILE_NAME));
+
+    // Remove original before decompression
+    fixture.remove_file(FILE_NAME);
+
+    // Decompress with custom suffix
+    let output = fixture
+        .run_cargo("xz", &["-d", "-S", CUSTOM_SUFFIX, &custom_compressed])
+        .await;
+    assert!(output.status.success());
+
+    // Verify decompressed content
+    fixture.assert_files(&[FILE_NAME], &[&data]);
+});
+
+// Test --suffix with dot prefix
+add_test!(custom_suffix_with_dot, async {
+    const FILE_NAME: &str = "suffix_dot_test.txt";
+    const CUSTOM_SUFFIX: &str = ".myext";
+    let data = generate_random_data(KB);
+
+    let mut fixture = Fixture::with_file(FILE_NAME, &data);
+    let file_path = fixture.path(FILE_NAME);
+    let custom_compressed_name = format!("{}{}", FILE_NAME, CUSTOM_SUFFIX);
+    let custom_compressed = fixture.path(&custom_compressed_name);
+
+    // Compress with custom suffix (with leading dot)
+    let output = fixture
+        .run_cargo("xz", &["--suffix", CUSTOM_SUFFIX, "-k", &file_path])
+        .await;
+    assert!(output.status.success());
+
+    // Check that the file with custom suffix was created
+    assert!(fixture.file_exists(&custom_compressed_name));
+
+    // Remove original before decompression
+    fixture.remove_file(FILE_NAME);
+
+    // Decompress with custom suffix
+    let output = fixture
+        .run_cargo("xz", &["-d", "--suffix", CUSTOM_SUFFIX, &custom_compressed])
+        .await;
+    assert!(output.status.success());
+
+    // Verify decompressed content
+    fixture.assert_files(&[FILE_NAME], &[&data]);
+});
+
+// Test that compressing a file that already has the suffix produces a warning
+add_test!(custom_suffix_already_present, async {
+    const FILE_NAME: &str = "already.xz";
+    const CUSTOM_SUFFIX: &str = "custom";
+    let data = generate_random_data(KB);
+
+    let mut fixture = Fixture::with_file(FILE_NAME, &data);
+    let file_path = fixture.path(FILE_NAME);
+
+    // Try to compress a file that already has .xz extension
+    let output = fixture.run_cargo("xz", &["-k", &file_path]).await;
+    // Should fail with a warning
+    assert!(!output.status.success());
+
+    // Now test with custom suffix
+    let custom_file = "test.custom";
+    fixture = Fixture::with_file(custom_file, &data);
+    let custom_path = fixture.path(custom_file);
+
+    let output = fixture
+        .run_cargo("xz", &["-S", CUSTOM_SUFFIX, "-k", &custom_path])
+        .await;
+    assert!(!output.status.success());
+});

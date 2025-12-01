@@ -57,6 +57,8 @@ pub struct CliConfig {
     pub check: IntegrityCheck,
     /// Machine-readable output
     pub robot: bool,
+    /// Custom suffix for compressed files
+    pub suffix: Option<String>,
 }
 
 impl Default for CliConfig {
@@ -75,6 +77,7 @@ impl Default for CliConfig {
             format: DecodeMode::Auto,
             check: IntegrityCheck::Crc64,
             robot: false,
+            suffix: None,
         }
     }
 }

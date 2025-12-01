@@ -49,6 +49,15 @@ pub enum Error {
         path: PathBuf,
     },
 
+    /// Input file already has the target suffix
+    #[error("{}: Already has `{}` suffix, skipping", path.display(), suffix)]
+    AlreadyHasSuffix {
+        /// Path to the input file
+        path: PathBuf,
+        /// The suffix that already exists
+        suffix: String,
+    },
+
     /// Compression operation failed
     #[error("{path}: Compressed data is corrupt")]
     Compression {
@@ -116,7 +125,8 @@ impl From<Error> for io::Error {
             | Error::InvalidOutputFilename { .. }
             | Error::InvalidCompressionLevel { .. }
             | Error::InvalidThreadCount { .. }
-            | Error::InvalidMemoryLimit(_) => io::Error::new(io::ErrorKind::InvalidInput, err),
+            | Error::InvalidMemoryLimit(_)
+            | Error::AlreadyHasSuffix { .. } => io::Error::new(io::ErrorKind::InvalidInput, err),
             Error::Decompression { .. }
             | Error::Compression { .. }
             | Error::FileInfoExtraction { .. } => io::Error::new(io::ErrorKind::InvalidData, err),

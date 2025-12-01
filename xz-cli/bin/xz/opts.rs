@@ -126,6 +126,14 @@ pub struct XzOpts {
     /// Machine-readable output
     #[arg(long = "robot")]
     pub robot: bool,
+
+    /// Use custom suffix on compressed files
+    #[arg(short = 'S', long = "suffix", value_name = "SUFFIX")]
+    pub suffix: Option<String>,
+
+    /// Display long help and exit
+    #[arg(short = 'H', long = "long-help", action = clap::ArgAction::Help)]
+    _long_help: Option<bool>,
 }
 
 impl XzOpts {
@@ -207,6 +215,7 @@ impl XzOpts {
             format: self.file_format()?,
             check: self.check_type()?,
             robot: self.robot,
+            suffix: self.suffix.clone(),
         })
     }
 }
@@ -245,6 +254,8 @@ mod tests {
             files_from_file: None,
             files0_from_file: None,
             robot: false,
+            suffix: None,
+            _long_help: None,
         }
     }
 

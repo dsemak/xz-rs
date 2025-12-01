@@ -97,7 +97,12 @@ pub fn process_file(input_path: &str, config: &CliConfig) -> Result<()> {
         {
             None
         } else {
-            Some(generate_output_filename(&input_path_buf, config.mode)?)
+            Some(generate_output_filename(
+                &input_path_buf,
+                config.mode,
+                config.suffix.as_deref(),
+                config.force,
+            )?)
         };
 
     // Open output
