@@ -115,6 +115,10 @@ where
     loop {
         let read = reader.read(&mut input)?;
         if read == 0 {
+            // If no data was ever processed, this is an invalid/empty input
+            if total_in == 0 {
+                return Err(BackendError::DataError.into());
+            }
             finish_decoder_sync(&mut decoder, &mut writer, &mut output, &mut total_out)?;
             return Ok(StreamSummary::new(total_in, total_out));
         }
@@ -208,6 +212,7 @@ fn finish_encoder_sync<W: Write>(
 /// # Returns
 ///
 /// * `Ok(())` if the decoder finished successfully
+/// * `Err(BackendError::DataError)` if the decoder couldn't finish properly (truncated data)
 /// * `Err(BackendError::BufError)` if the decoder gets stuck in an infinite loop
 fn finish_decoder_sync<W: Write>(
     decoder: &mut Decoder,
@@ -218,6 +223,9 @@ fn finish_decoder_sync<W: Write>(
     // Prevent infinite loops by limiting the number of finish attempts
     const MAX_SPINS: usize = 16;
 
+    // Track if we've made any progress (produced output) during finish
+    let mut made_progress = false;
+
     for _ in 0..MAX_SPINS {
         // Process with empty input to flush internal buffers
         let (_read, written) = decoder.process(&[], output, Action::Finish)?;
@@ -226,12 +234,26 @@ fn finish_decoder_sync<W: Write>(
         if written > 0 {
             writer.write_all(&output[..written])?;
             *total_out += written as u64;
+            made_progress = true;
         }
 
         // Check if decoder has completed successfully
         if decoder.is_finished() {
-            writer.flush()?;
-            return Ok(());
+            // The decoder is finished. For valid data, the decoder either:
+            // 1. Was already finished during the Run phase (we wouldn't be here)
+            // 2. Produced remaining output during Finish and signaled StreamEnd
+            // 3. Was empty but valid (no data to decompress)
+            //
+            // For truncated data, the decoder is force-finished without producing
+            // output and without properly completing. We detect this by checking
+            // if we made progress during the finish phase.
+            if made_progress {
+                writer.flush()?;
+                return Ok(());
+            }
+            // Decoder was force-finished without producing output during finish -
+            // likely truncated or incomplete data
+            return Err(BackendError::DataError.into());
         }
 
         // If no progress is made, break to avoid infinite loop
@@ -240,8 +262,8 @@ fn finish_decoder_sync<W: Write>(
         }
     }
 
-    // If we reach here, the decoder failed to finish properly
-    Err(BackendError::BufError.into())
+    // If we reach here, the decoder failed to finish properly (truncated or corrupted data)
+    Err(BackendError::DataError.into())
 }
 
 #[cfg(test)]
