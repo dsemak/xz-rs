@@ -5,20 +5,49 @@
 use std::io;
 use xz_utils::{run_cli, CliConfig, CompressionFormat, OperationMode};
 
+fn parse_args(args: &[String]) -> (CliConfig, Vec<String>) {
+    let mut config = CliConfig {
+        mode: OperationMode::Compress,
+        format: CompressionFormat::Xz,
+        level: Some(6),
+        keep: false,
+        force: false,
+        verbose: false,
+        stdout: false,
+    };
+    
+    let mut files = Vec::new();
+    
+    for arg in args {
+        match arg.as_str() {
+            "-f" | "--force" => config.force = true,
+            "-k" | "--keep" => config.keep = true,
+            "-v" | "--verbose" => config.verbose = true,
+            "-c" | "--stdout" => config.stdout = true,
+            "-d" | "--decompress" => config.mode = OperationMode::Decompress,
+            "-t" | "--test" => config.mode = OperationMode::Test,
+            "--format=xz" => config.format = CompressionFormat::Xz,
+            "--format=lzma" => config.format = CompressionFormat::Lzma,
+            "--format=auto" => config.format = CompressionFormat::Auto,
+            arg if arg.starts_with('-') && arg.len() == 2 && arg.chars().nth(1).unwrap().is_digit(10) => {
+                if let Ok(level) = arg[1..].parse::<u32>() {
+                    config.level = Some(level);
+                }
+            }
+            _ => {
+                files.push(arg.clone());
+            }
+        }
+    }
+    
+    (config, files)
+}
+
 fn main() -> io::Result<()> {
     let args: Vec<String> = std::env::args().collect();
     let program = "xz";
     
-    // Default configuration for compression
-    let config = CliConfig {
-        mode: OperationMode::Compress,
-        format: CompressionFormat::Xz,  // Default to XZ format
-        level: Some(6),                 // Default compression level
-        keep: false,                    // Remove original files
-        force: false,                   // Don't overwrite existing files
-        verbose: false,                 // Quiet mode
-        stdout: false,                  // Output to file
-    };
+    let (config, files) = parse_args(&args[1..]);
     
-    run_cli(&args[1..], &config, program)
+    run_cli(&files, &config, program)
 }
