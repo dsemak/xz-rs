@@ -1,26 +1,26 @@
 [workspace]
 resolver = "2"
-members = ["lzma-safe", "xz-cli", "xz-core"]
+members = ["gzip-utils", "xz-utils"]
 
 [workspace.package]
-version = "0.1.1"
+version = "0.2.0"  # Bump version for new architecture
 edition = "2021"
 authors = ["Dmitry Semak <dmitry.semak@gmail.com>"]
 license = "MIT"
 repository = "https://github.com/dsemak/xz-rs"
 homepage = "https://github.com/dsemak/xz-rs"
-description = "Modern Rust bindings and utilities for liblzma (XZ Utils)"
-keywords = ["compression", "lzma", "lzma2", "xz"]
-categories = ["api-bindings", "command-line-utilities", "compression"]
+description = "Modern Rust compression utilities: gzip and XZ/LZMA implementations"
 
+# Common dependencies for all crates
 [workspace.dependencies]
+thiserror = "2.0"
 tokio = { version = "1.0", features = ["full"] }
 
-[workspace.dependencies.bindgen]
-version = "0.70"
-
-[workspace.dependencies.cc]
+# Compression library dependencies
+[workspace.dependencies.flate2]
 version = "1.0"
+features = ["zlib"]
 
-[workspace.dependencies.pkg-config]
-version = "0.3"
+[workspace.dependencies.lzma-rs]
+version = "0.3.0"
+
