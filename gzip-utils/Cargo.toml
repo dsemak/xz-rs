@@ -1,0 +1,35 @@
+[package]
+name = "gzip-utils"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Fast gzip compression/decompression utilities"
+repository.workspace = true
+homepage.workspace = true
+keywords = ["gzip", "compression", "gunzip", "zcat"]
+categories = ["command-line-utilities", "compression"]
+
+[[bin]]
+name = "gzip"
+path = "bin/gzip/main.rs"
+
+[[bin]]
+name = "gunzip"
+path = "bin/gunzip/main.rs"
+
+[[bin]]
+name = "zcat"
+path = "bin/zcat/main.rs"
+
+[dependencies]
+thiserror = { workspace = true }
+tokio = { workspace = true }
+flate2 = { workspace = true }
+
+# clap
+clap = { version = "4.0", features = ["derive", "env"], optional = true }
+
+[features]
+default = []
+cli = ["dep:clap"]  # Enable CLI argument parsing
