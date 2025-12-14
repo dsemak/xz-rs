@@ -52,6 +52,14 @@ pub struct UnxzOpts {
     /// Memory usage limit for decompression
     #[arg(short = 'M', long = "memory", value_name = "LIMIT", value_parser = parse_memory_limit)]
     memory: Option<u64>,
+
+    /// Don't create sparse files when decompressing.
+    ///
+    /// Upstream `xz` attempts to create sparse output files by turning long runs
+    /// of zero bytes into holes. Use this option to always write the zero bytes
+    /// instead.
+    #[arg(long = "no-sparse")]
+    no_sparse: bool,
 }
 
 impl UnxzOpts {
@@ -85,6 +93,7 @@ impl UnxzOpts {
             suffix: None,
             single_stream: false,
             ignore_check: false,
+            sparse: !self.no_sparse,
         }
     }
 
@@ -110,6 +119,7 @@ mod tests {
             test: true,
             threads: Some(8),
             memory: Some(1024),
+            no_sparse: false,
         };
 
         let config = opts.config();

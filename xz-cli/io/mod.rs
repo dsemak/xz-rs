@@ -8,6 +8,13 @@ use std::path::{Path, PathBuf};
 use crate::config::{CliConfig, OperationMode, DEFAULT_BUFFER_SIZE, LZMA_EXTENSION, XZ_EXTENSION};
 use crate::error::{CliError, Error, Result, Warning};
 
+mod sparse_writer;
+
+pub(crate) use sparse_writer::SparseFileWriter;
+
+#[cfg(test)]
+mod tests;
+
 /// Checks if a file path has a recognized compression extension.
 ///
 /// Recognizes `.xz` and `.lzma` extensions (case-insensitive).
@@ -228,4 +235,27 @@ pub fn open_output(path: Option<&Path>, config: &CliConfig) -> Result<Box<dyn io
             io::stdout(),
         )))
     }
+}
+
+/// Opens an output file for writing, applying `--force` overwrite semantics.
+///
+/// This is a lower-level helper used when the caller needs to keep the output as a [`File`]
+/// (e.g. to implement sparse output with `Seek`).
+///
+/// # Errors
+///
+/// Returns an error if the file exists and overwrite isn't forced, or if creation fails.
+pub(crate) fn open_output_file(path: &Path, config: &CliConfig) -> Result<File> {
+    if path.exists() && !config.force {
+        return Err(CliError::from(Error::OutputExists {
+            path: path.to_path_buf(),
+        }));
+    }
+
+    File::create(path).map_err(|source| {
+        CliError::from(Error::CreateOutput {
+            path: path.to_path_buf(),
+            source,
+        })
+    })
 }

@@ -143,6 +143,14 @@ pub struct XzOpts {
     #[arg(long = "ignore-check")]
     pub ignore_check: bool,
 
+    /// Don't create sparse files when decompressing.
+    ///
+    /// Upstream `xz` attempts to create sparse output files by turning long runs
+    /// of zero bytes into holes. Use this option to always write the zero bytes
+    /// instead.
+    #[arg(long = "no-sparse")]
+    pub no_sparse: bool,
+
     /// Display long help and exit
     #[arg(short = 'H', long = "long-help", action = clap::ArgAction::Help)]
     _long_help: Option<bool>,
@@ -231,6 +239,7 @@ impl XzOpts {
             suffix: self.suffix.clone(),
             single_stream: self.single_stream,
             ignore_check: self.ignore_check,
+            sparse: !self.no_sparse,
         })
     }
 }
@@ -273,6 +282,7 @@ mod tests {
             suffix: None,
             single_stream: false,
             ignore_check: false,
+            no_sparse: false,
             _long_help: None,
         }
     }

@@ -63,6 +63,8 @@ pub struct CliConfig {
     pub single_stream: bool,
     /// Skip integrity check verification
     pub ignore_check: bool,
+    /// Enable sparse output when decompressing to a regular file
+    pub sparse: bool,
 }
 
 impl Default for CliConfig {
@@ -84,6 +86,7 @@ impl Default for CliConfig {
             suffix: None,
             single_stream: false,
             ignore_check: false,
+            sparse: true,
         }
     }
 }

@@ -63,6 +63,8 @@ impl XzCatOpts {
             suffix: None,
             single_stream: false,
             ignore_check: false,
+            // Always writes to stdout; sparse output is not applicable.
+            sparse: false,
         }
     }
 

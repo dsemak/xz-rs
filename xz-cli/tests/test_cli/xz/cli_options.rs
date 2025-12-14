@@ -414,3 +414,68 @@ add_test!(ignore_check_option, async {
     // Verify data is correct
     fixture.assert_files(&[FILE_NAME], &[data]);
 });
+
+// Test --no-sparse option disables sparse output when decompressing to a file.
+add_test!(no_sparse_option_affects_output_allocation, async {
+    use std::fs;
+    use std::path::Path;
+
+    const FILE_NAME: &str = "no_sparse_test.bin";
+
+    // Create a file with a large zero run that is a good candidate for sparseness.
+    let mut data = Vec::new();
+    data.extend_from_slice(b"ABC");
+    data.extend(std::iter::repeat_n(0u8, 2 * MB));
+    data.extend_from_slice(b"XYZ");
+
+    let mut fixture = Fixture::with_file(FILE_NAME, &data);
+    let file_path = fixture.path(FILE_NAME);
+    let compressed_path = fixture.compressed_path(FILE_NAME);
+
+    // Compress and keep the original and .xz so we can decompress twice.
+    let output = fixture.run_cargo("xz", &["-k", &file_path]).await;
+    assert!(output.status.success());
+
+    // Remove original before decompression (like upstream usage patterns).
+    fixture.remove_file(FILE_NAME);
+
+    // First decompression: default behavior (sparse enabled).
+    let output = fixture
+        .run_cargo("xz", &["-d", "-k", "-f", &compressed_path])
+        .await;
+    assert!(output.status.success());
+    fixture.assert_files(&[FILE_NAME], &[&data]);
+
+    let out_path = Path::new(fixture.root_dir_path()).join(FILE_NAME);
+    let meta_sparse = fs::metadata(&out_path).unwrap_or_else(|e| {
+        panic!("failed to stat decompressed output {out_path:?}: {e}");
+    });
+    assert_eq!(meta_sparse.len(), data.len() as u64);
+
+    // Remove output and decompress again with --no-sparse.
+    fixture.remove_file(FILE_NAME);
+    let output = fixture
+        .run_cargo("xz", &["-d", "-k", "-f", "--no-sparse", &compressed_path])
+        .await;
+    assert!(output.status.success());
+    fixture.assert_files(&[FILE_NAME], &[&data]);
+
+    let meta_dense = fs::metadata(&out_path).unwrap_or_else(|e| {
+        panic!("failed to stat decompressed output {out_path:?}: {e}");
+    });
+    assert_eq!(meta_dense.len(), data.len() as u64);
+
+    // On filesystems that support sparse files, the default output should allocate
+    // fewer (or equal) blocks compared to --no-sparse.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+
+        let blocks_sparse = meta_sparse.blocks();
+        let blocks_dense = meta_dense.blocks();
+        assert!(
+            blocks_sparse <= blocks_dense,
+            "expected sparse output to allocate <= blocks (sparse={blocks_sparse}, dense={blocks_dense})"
+        );
+    }
+});

@@ -5,7 +5,9 @@ use std::path::PathBuf;
 
 use crate::config::{CliConfig, OperationMode};
 use crate::error::{CliError, Error, InvocationError, Result};
-use crate::io::{generate_output_filename, open_input, open_output};
+use crate::io::{
+    generate_output_filename, open_input, open_output, open_output_file, SparseFileWriter,
+};
 use crate::operations::{compress_file, decompress_file, list_file};
 
 /// Removes the input file after successful processing.
@@ -108,7 +110,20 @@ pub fn process_file(input_path: &str, config: &CliConfig) -> Result<()> {
         };
 
     // Open output
-    let output = open_output(output_path.as_deref(), config)?;
+    let output: Box<dyn io::Write> = match (
+        config.mode,
+        config.sparse,
+        config.stdout,
+        output_path.as_deref(),
+    ) {
+        (OperationMode::Decompress, true, false, Some(path)) => {
+            // When decompressing to a file, attempt to create sparse output by seeking over
+            // long zero runs
+            let file = open_output_file(path, config)?;
+            Box::new(SparseFileWriter::new(file))
+        }
+        _ => open_output(output_path.as_deref(), config)?,
+    };
 
     // Process based on mode
     match config.mode {
