@@ -1,5 +1,5 @@
 use crate::add_test;
-use crate::common::{generate_random_data, Fixture};
+use crate::common::{generate_random_data, BinaryType, Fixture};
 use crate::{KB, MB};
 
 // Test all compression levels (0-9)
@@ -203,6 +203,121 @@ add_test!(multiple_files, async {
     assert!(fixture.file_exists(&format!("{}.xz", FILE_1)));
     assert!(fixture.file_exists(&format!("{}.xz", FILE_2)));
     assert!(fixture.file_exists(&format!("{}.xz", FILE_3)));
+});
+
+// Test --files[=FILE] reads newline-delimited file names from a file.
+add_test!(files_option_reads_list_from_file, async {
+    use std::fs;
+
+    const FILE_1: &str = "files_list_input_1.txt";
+    const FILE_2: &str = "files_list_input_2.txt";
+    const LIST_FILE: &str = "files_list.txt";
+
+    let data1 = generate_random_data(KB);
+    let data2 = generate_random_data(KB);
+
+    let mut fixture = Fixture::with_files(&[FILE_1, FILE_2], &[&data1, &data2]);
+    let path1 = fixture.path(FILE_1);
+    let path2 = fixture.path(FILE_2);
+
+    let list_path = fixture.path(LIST_FILE);
+    fs::write(&list_path, format!("{path1}\n{path2}\n")).unwrap();
+
+    let output = fixture
+        .run_cargo("xz", &["--files", &list_path, "-k"])
+        .await;
+    assert!(output.status.success());
+
+    assert!(fixture.file_exists(&format!("{FILE_1}.xz")));
+    assert!(fixture.file_exists(&format!("{FILE_2}.xz")));
+    assert!(fixture.file_exists(LIST_FILE));
+    assert!(!fixture.file_exists(&format!("{LIST_FILE}.xz")));
+});
+
+// Test --files reads newline-delimited file names from stdin when FILE is omitted.
+add_test!(files_option_reads_list_from_stdin, async {
+    const FILE_1: &str = "files_stdin_input_1.txt";
+    const FILE_2: &str = "files_stdin_input_2.txt";
+
+    let data1 = generate_random_data(KB);
+    let data2 = generate_random_data(KB);
+
+    let mut fixture = Fixture::with_files(&[FILE_1, FILE_2], &[&data1, &data2]);
+    let path1 = fixture.path(FILE_1);
+    let path2 = fixture.path(FILE_2);
+
+    let stdin = format!("{path1}\n{path2}\n");
+    let output = fixture
+        .run_with_stdin(
+            BinaryType::cargo("xz"),
+            &["--files", "-k"],
+            Some(vec![stdin.as_str()]),
+        )
+        .await;
+    assert!(output.status.success());
+
+    assert!(fixture.file_exists(&format!("{FILE_1}.xz")));
+    assert!(fixture.file_exists(&format!("{FILE_2}.xz")));
+});
+
+// Test --files0[=FILE] reads NUL-delimited file names from a file.
+add_test!(files0_option_reads_list_from_file, async {
+    use std::fs;
+
+    const FILE_1: &str = "files0_list_input_1.txt";
+    const FILE_2: &str = "files0_list_input_2.txt";
+    const LIST_FILE: &str = "files0_list.bin";
+
+    let data1 = generate_random_data(KB);
+    let data2 = generate_random_data(KB);
+
+    let mut fixture = Fixture::with_files(&[FILE_1, FILE_2], &[&data1, &data2]);
+    let path1 = fixture.path(FILE_1);
+    let path2 = fixture.path(FILE_2);
+
+    let list_path = fixture.path(LIST_FILE);
+    let mut list_bytes = Vec::new();
+    list_bytes.extend_from_slice(path1.as_bytes());
+    list_bytes.push(0);
+    list_bytes.extend_from_slice(path2.as_bytes());
+    list_bytes.push(0);
+    fs::write(&list_path, list_bytes).unwrap();
+
+    let output = fixture
+        .run_cargo("xz", &["--files0", &list_path, "-k"])
+        .await;
+    assert!(output.status.success());
+
+    assert!(fixture.file_exists(&format!("{FILE_1}.xz")));
+    assert!(fixture.file_exists(&format!("{FILE_2}.xz")));
+    assert!(fixture.file_exists(LIST_FILE));
+    assert!(!fixture.file_exists(&format!("{LIST_FILE}.xz")));
+});
+
+// Test --files0 reads NUL-delimited file names from stdin when FILE is omitted.
+add_test!(files0_option_reads_list_from_stdin, async {
+    const FILE_1: &str = "files0_stdin_input_1.txt";
+    const FILE_2: &str = "files0_stdin_input_2.txt";
+
+    let data1 = generate_random_data(KB);
+    let data2 = generate_random_data(KB);
+
+    let mut fixture = Fixture::with_files(&[FILE_1, FILE_2], &[&data1, &data2]);
+    let path1 = fixture.path(FILE_1);
+    let path2 = fixture.path(FILE_2);
+
+    let stdin = format!("{path1}\0{path2}\0");
+    let output = fixture
+        .run_with_stdin(
+            BinaryType::cargo("xz"),
+            &["--files0", "-k"],
+            Some(vec![stdin.as_str()]),
+        )
+        .await;
+    assert!(output.status.success());
+
+    assert!(fixture.file_exists(&format!("{FILE_1}.xz")));
+    assert!(fixture.file_exists(&format!("{FILE_2}.xz")));
 });
 
 // Test -e (extreme) option

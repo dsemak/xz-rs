@@ -120,11 +120,23 @@ pub struct XzOpts {
     pub check: Option<String>,
 
     /// Read filenames from file (one per line)
-    #[arg(long = "files", value_name = "FILE")]
+    #[arg(
+        long = "files",
+        value_name = "FILE",
+        num_args = 0..=1,
+        default_missing_value = "-",
+        conflicts_with = "files0_from_file"
+    )]
     pub files_from_file: Option<String>,
 
     /// Read filenames from file (null-terminated)
-    #[arg(long = "files0", value_name = "FILE")]
+    #[arg(
+        long = "files0",
+        value_name = "FILE",
+        num_args = 0..=1,
+        default_missing_value = "-",
+        conflicts_with = "files_from_file"
+    )]
     pub files0_from_file: Option<String>,
 
     /// Machine-readable output

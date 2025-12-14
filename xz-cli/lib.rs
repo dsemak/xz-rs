@@ -9,6 +9,7 @@ mod error;
 mod io;
 mod operations;
 mod process;
+mod utils;
 
 #[cfg(test)]
 mod tests;
@@ -18,3 +19,4 @@ pub use error::{format_error_for_stderr, CliError, Error, InvocationError, Resul
 pub use io::{generate_output_filename, has_compression_extension, open_input, open_output};
 pub use operations::{compress_file, decompress_file};
 pub use process::{cleanup_input_file, parse_memory_limit, process_file, run_cli};
+pub use utils::argfiles;
