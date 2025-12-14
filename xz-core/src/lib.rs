@@ -50,12 +50,17 @@
 //! use std::io::Cursor;
 //!
 //! use xz_core::{
+//!     options::CompressionOptions,
 //!     options::DecompressionOptions,
+//!     pipeline::compress,
 //!     pipeline::decompress,
 //! };
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
-//! # let compressed_data = vec![0xFD, 0x37, 0x7A, 0x58, 0x5A, 0x00]; // Mock XZ data
+//! let input = b"The quick brown fox jumps over the lazy dog";
+//! let mut compressed_data = Vec::new();
+//! let compress_options = CompressionOptions::default();
+//! compress(&mut Cursor::new(input), &mut compressed_data, &compress_options)?;
 //! let mut output = Vec::new();
 //!
 //! let options = DecompressionOptions::default();
@@ -64,6 +69,7 @@
 //!     &mut output,
 //!     &options,
 //! )?;
+//! assert_eq!(output, input);
 //!
 //! println!("Decompressed {} bytes to {} bytes",
 //!          summary.bytes_read, summary.bytes_written);
