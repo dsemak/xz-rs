@@ -212,10 +212,6 @@ time gzip largefile.bin
 time xz largefile.bin
 ```
 
-🤝 Contributing
-
-We welcome contributions! Please see our Contributing Guide.
-
 Development Setup
 
 ```bash
@@ -246,12 +242,6 @@ at your option.
 · flate2 - Rust gzip implementation
 · lzma-rs - Pure Rust LZMA
 · The Rust community for excellent tooling
-
-📞 Support
-
-· Issues: GitHub Issues
-· Discussions: GitHub Discussions
-· Email: your.email@example.com
 
 ---
 
