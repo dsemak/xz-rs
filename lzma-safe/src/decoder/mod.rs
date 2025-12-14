@@ -196,11 +196,15 @@ impl Decoder {
             return Err(crate::Error::ProgError);
         };
 
-        // Only update the input pointer when new data is supplied so that
-        // liblzma can continue consuming any buffered bytes from previous
-        // calls when `input` is empty.
+        // Only update the input pointer when new data is supplied so that liblzma can continue
+        // consuming any buffered bytes from previous calls when `input` is empty.
+        //
+        // However, when finishing and there are no buffered bytes left, explicitly clear the input
+        // pointer (next_in = NULL). Some liblzma paths rely on next_in being NULL at EOF.
         if !input.is_empty() {
             stream.set_next_input(input);
+        } else if action == Action::Finish && stream.avail_in() == 0 {
+            stream.set_next_input(&[]);
         }
         stream.set_next_out(output);
 
@@ -208,37 +212,62 @@ impl Decoder {
         let output_before = stream.avail_out();
 
         // Perform the decompression step.
-        let result = crate::ffi::lzma_code(&mut stream, action);
-        let bytes_read = input_before - stream.avail_in();
-        let bytes_written = output_before - stream.avail_out();
+        let mut result = crate::ffi::lzma_code(&mut stream, action);
+        let mut bytes_read = input_before - stream.avail_in();
+        let mut bytes_written = output_before - stream.avail_out();
 
-        // Handle special case for Action::Finish with empty input where liblzma
-        // may require an additional call to signal LZMA_STREAM_END properly.
-        let result = if action == Action::Finish
-            && result.is_ok()
-            && input_before == 0
-            && bytes_read == 0
-            && bytes_written == 0
+        // liblzma can return `LZMA_BUF_ERROR` even after making progress (e.g. output buffer is
+        // full). In that case, treat it as "decoding continues" and let the caller retry with a
+        // fresh output buffer (or more input).
+        if matches!(result, Err(crate::Error::BufError)) && (bytes_read != 0 || bytes_written != 0)
         {
-            // For empty inputs liblzma may require one additional call before
-            // signalling `LZMA_STREAM_END`. Invoke it here so callers don't
-            // need to loop in trivial cases.
-            let second_result = crate::ffi::lzma_code(&mut stream, action);
-            let second_bytes_read = input_before - stream.avail_in();
-            let second_bytes_written = output_before - stream.avail_out();
+            result = Ok(());
+        }
 
-            if (second_result.is_ok() || matches!(second_result, Err(crate::Error::BufError)))
-                && second_bytes_read == 0
-                && second_bytes_written == 0
-            {
-                // Force stream end when no progress is made on the second call
-                Err(crate::Error::StreamEnd)
-            } else {
-                second_result
+        // Handle a subtle corner case for Action::Finish with no progress: liblzma may require one
+        // or more additional calls to transition to `LZMA_STREAM_END`.
+        //
+        // IMPORTANT: we never "force" StreamEnd for non-empty inputs. If liblzma cannot reach
+        // StreamEnd, the caller should treat this as truncated/corrupt input.
+        if action == Action::Finish && bytes_read == 0 && bytes_written == 0 {
+            const MAX_RETRIES: usize = 2;
+
+            for _ in 0..MAX_RETRIES {
+                if !matches!(result, Ok(()) | Err(crate::Error::BufError)) {
+                    break;
+                }
+
+                let in_before = stream.avail_in();
+                let out_before = stream.avail_out();
+                let next = crate::ffi::lzma_code(&mut stream, action);
+                let read_delta = in_before - stream.avail_in();
+                let written_delta = out_before - stream.avail_out();
+                bytes_read += read_delta;
+                bytes_written += written_delta;
+
+                match next {
+                    Err(crate::Error::StreamEnd) => {
+                        result = Err(crate::Error::StreamEnd);
+                        break;
+                    }
+                    // Treat a never-fed decoder as a successful empty stream.
+                    Ok(()) | Err(crate::Error::BufError) if stream.total_in() == 0 => {
+                        if read_delta == 0 && written_delta == 0 {
+                            result = Err(crate::Error::StreamEnd);
+                            break;
+                        }
+                        result = next;
+                    }
+                    _ => {
+                        result = next;
+                        // If we made progress, stop retrying.
+                        if read_delta != 0 || written_delta != 0 {
+                            break;
+                        }
+                    }
+                }
             }
-        } else {
-            result
-        };
+        }
 
         // Update total counters.
         self.total_in = stream.total_in();

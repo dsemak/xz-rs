@@ -106,26 +106,32 @@ where
     W: AsyncWrite + Unpin,
 {
     let mut decoder = options.build_decoder()?;
-    let mut input = Buffer::new(options.input_capacity())?;
+    let mut input = vec![0u8; options.input_capacity()];
     let mut output = Buffer::new(options.output_capacity())?;
     let mut total_in = 0u64;
     let mut total_out = 0u64;
+    let mut pending_len: usize = 0;
 
     loop {
-        let read = reader.read(&mut input).await?;
-        if read == 0 {
-            // If no data was ever processed, this is an invalid/empty input
-            if total_in == 0 {
-                return Err(BackendError::DataError.into());
+        // Ensure we have some input to feed the decoder.
+        if pending_len == 0 {
+            let read = reader.read(&mut input).await?;
+            if read == 0 {
+                // If no data was ever processed, this is an invalid/empty input
+                if total_in == 0 {
+                    return Err(BackendError::DataError.into());
+                }
+                finish_decoder_async(&mut decoder, &mut writer, &mut output, &mut total_out, &[])
+                    .await?;
+                return Ok(StreamSummary::new(total_in, total_out));
             }
-            finish_decoder_async(&mut decoder, &mut writer, &mut output, &mut total_out).await?;
-            return Ok(StreamSummary::new(total_in, total_out));
+            pending_len = read;
         }
 
         let mut consumed = 0usize;
-        while consumed < read {
+        while consumed < pending_len {
             let (used, written) =
-                decoder.process(&input[consumed..read], &mut output, Action::Run)?;
+                decoder.process(&input[consumed..pending_len], &mut output, Action::Run)?;
             if written > 0 {
                 writer.write_all(&output[..written]).await?;
                 total_out += written as u64;
@@ -134,14 +140,67 @@ where
             total_in += used as u64;
 
             if decoder.is_finished() {
-                writer.flush().await?;
-                return Ok(StreamSummary::new(total_in, total_out));
+                // In non-concatenated mode, "finished" means we intentionally stop after the first
+                // stream and ignore any remaining input. This matches the xz(1) --single-stream
+                // semantics.
+                if !options.flags().is_concatenated() {
+                    writer.flush().await?;
+                    return Ok(StreamSummary::new(total_in, total_out));
+                }
+
+                // In concatenated mode, finishing before EOF indicates trailing garbage or an
+                // unexpected state. Be strict and require EOF.
+                let remaining = pending_len - consumed;
+                if remaining > 0 {
+                    return Err(BackendError::DataError.into());
+                }
+                let read = reader.read(&mut input).await?;
+                if read == 0 {
+                    writer.flush().await?;
+                    return Ok(StreamSummary::new(total_in, total_out));
+                }
+                return Err(BackendError::DataError.into());
             }
 
             if used == 0 && written == 0 {
-                break;
+                // Decoder made no progress with current input; read more and append.
+                if pending_len == input.len() {
+                    // Grow the buffer to accommodate more pending input.
+                    let grow_by = options.input_capacity().max(1);
+                    input.try_reserve(grow_by).map_err(|_| {
+                        crate::error::Error::AllocationFailed {
+                            capacity: input.len() + grow_by,
+                        }
+                    })?;
+                    input.resize(input.len() + grow_by, 0);
+                }
+
+                let read = reader.read(&mut input[pending_len..]).await?;
+                if read == 0 {
+                    // No more input available; finish using the still-pending bytes.
+                    finish_decoder_async(
+                        &mut decoder,
+                        &mut writer,
+                        &mut output,
+                        &mut total_out,
+                        &input[consumed..pending_len],
+                    )
+                    .await?;
+                    return Ok(StreamSummary::new(total_in, total_out));
+                }
+
+                pending_len += read;
+                // Continue processing with the extended buffer window.
+                continue;
             }
         }
+
+        // Move the unconsumed tail to the beginning of the buffer.
+        let remaining = pending_len - consumed;
+        if remaining > 0 {
+            input.copy_within(consumed..pending_len, 0);
+        }
+        pending_len = remaining;
     }
 }
 
@@ -199,7 +258,7 @@ async fn finish_encoder_async<W: AsyncWrite + Unpin>(
     Ok(())
 }
 
-/// Finishes the decoding process asynchronously by flushing any remaining data from the decoder.
+/// Finishes decoding asynchronously by driving the decoder to `StreamEnd`.
 ///
 /// # Parameters
 ///
@@ -207,55 +266,56 @@ async fn finish_encoder_async<W: AsyncWrite + Unpin>(
 /// * `writer` - Async output writer to receive the final decoded data
 /// * `output` - Buffer for temporary storage of decoded data
 /// * `total_out` - Running count of total bytes written (updated in-place)
+/// * `pending` - Remaining input bytes that were read but not yet consumed by the decoder
 ///
 /// # Returns
 ///
 /// * `Ok(())` if the decoder finished successfully
-/// * `Err(BackendError::DataError)` if the decoder couldn't finish properly (truncated data)
-/// * `Err(BackendError::BufError)` if the decoder gets stuck in an infinite loop
+/// * `Err(BackendError::DataError)` if the stream couldn't be finished (e.g. truncated/corrupt)
+///
+/// This function uses a bounded number of iterations to avoid infinite loops if the backend
+/// fails to make progress.
 async fn finish_decoder_async<W: AsyncWrite + Unpin>(
     decoder: &mut Decoder,
     writer: &mut W,
     output: &mut [u8],
     total_out: &mut u64,
+    mut pending: &[u8],
 ) -> Result<()> {
-    // Prevent infinite loops by limiting the number of finish attempts
-    const MAX_SPINS: usize = 16;
+    // Prevent infinite loops by limiting the number of finish attempts.
+    //
+    // On truncated input, liblzma won't be able to finish the stream and will
+    // typically make no progress once input is exhausted.
+    const MAX_SPINS: usize = 64;
 
     for _ in 0..MAX_SPINS {
-        // Process with empty input to flush internal buffers
-        let (_read, written) = decoder.process(&[], output, Action::Finish)?;
-
-        // Write any output data produced during finishing
+        let (used, written) = decoder.process(pending, output, Action::Finish)?;
         if written > 0 {
             writer.write_all(&output[..written]).await?;
             *total_out += written as u64;
         }
 
-        // Check if decoder has completed successfully
+        pending = pending.get(used..).unwrap_or(&[]);
+
         if decoder.is_finished() {
-            // The decoder is finished. This is the normal completion path.
-            //
-            // With CONCATENATED flag, the decoder may finish without producing
-            // additional output during Finish phase - all data was already output
-            // during the Run phase. Without CONCATENATED, the decoder typically
-            // finishes during Run phase (we wouldn't reach here).
-            //
-            // The made_progress check was intended to detect truncated data,
-            // but it causes false positives with valid CONCATENATED streams.
-            // Since liblzma signals is_finished() only on valid completion,
-            // we trust that status.
             writer.flush().await?;
             return Ok(());
         }
 
-        // If no progress is made, break to avoid infinite loop
-        if written == 0 {
+        // If we still have pending input but the decoder couldn't consume anything,
+        // it will never finish.
+        if !pending.is_empty() && used == 0 && written == 0 {
             break;
+        }
+
+        // Once pending input has been fully consumed, keep calling with empty input
+        // to let the decoder flush internal state (liblzma may need an extra call
+        // to transition to StreamEnd). We rely on MAX_SPINS to avoid infinite loops.
+        if pending.is_empty() && used == 0 && written == 0 {
+            continue;
         }
     }
 
-    // If we reach here, the decoder failed to finish properly (truncated or corrupted data)
     Err(BackendError::DataError.into())
 }
 

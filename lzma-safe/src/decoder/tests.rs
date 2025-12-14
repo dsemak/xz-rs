@@ -363,39 +363,53 @@ fn decoder_partial_processing() {
     let compressed = compress_xz(TEST_DATA_PRIMARY);
     let mut decoder = Stream::default().decoder(u64::MAX, Flags::empty()).unwrap();
 
-    let mut _total_read = 0;
     let mut total_written = 0;
     let mut output = Vec::new();
     let mut output_chunk = vec![0u8; 10]; // Small chunks
 
-    // Process in small chunks with Action::Run
-    for chunk in compressed.chunks(5) {
+    // Process in small chunks with Action::Run.
+    //
+    // `Decoder::process` may consume fewer bytes than provided if the output buffer is too small.
+    // In that case, we must retry with the remaining input bytes instead of dropping them.
+    let mut pos = 0usize;
+    while pos < compressed.len() && !decoder.is_finished() {
+        let end = (pos + 5).min(compressed.len());
+        let chunk = &compressed[pos..end];
+
         let (bytes_read, bytes_written) = decoder
             .process(chunk, &mut output_chunk, Action::Run)
             .unwrap();
 
-        _total_read += bytes_read;
+        pos += bytes_read;
         total_written += bytes_written;
         output.extend_from_slice(&output_chunk[..bytes_written]);
 
-        if bytes_read < chunk.len() {
-            // If not all input was consumed, we might need to finish
-            break;
-        }
+        // Guard against infinite loops on unexpected behavior.
+        assert!(
+            bytes_read != 0 || bytes_written != 0,
+            "decoder made no progress during Action::Run",
+        );
     }
 
-    // Finish processing
-    loop {
-        let (bytes_read, bytes_written) = decoder
-            .process(&[], &mut output_chunk, Action::Finish)
-            .unwrap();
+    // Finish processing if needed.
+    if !decoder.is_finished() {
+        loop {
+            let (bytes_read, bytes_written) = decoder
+                .process(&[], &mut output_chunk, Action::Finish)
+                .unwrap();
 
-        _total_read += bytes_read;
-        total_written += bytes_written;
-        output.extend_from_slice(&output_chunk[..bytes_written]);
+            total_written += bytes_written;
+            output.extend_from_slice(&output_chunk[..bytes_written]);
 
-        if decoder.is_finished() {
-            break;
+            if decoder.is_finished() {
+                break;
+            }
+
+            // Guard against infinite loops on unexpected behavior.
+            assert!(
+                bytes_read != 0 || bytes_written != 0,
+                "decoder made no progress during Action::Finish",
+            );
         }
     }
 

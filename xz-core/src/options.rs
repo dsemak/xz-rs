@@ -383,6 +383,10 @@ impl DecompressionOptions {
     pub(crate) fn output_capacity(&self) -> usize {
         self.output_buffer_size.get()
     }
+
+    pub(crate) fn flags(&self) -> DecoderFlags {
+        self.flags
+    }
 }
 
 /// Converts a `Duration` to a timeout value in milliseconds for the LZMA library.
