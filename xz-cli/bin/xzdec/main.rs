@@ -9,16 +9,19 @@ mod opts;
 
 use opts::XzDecOpts;
 
-use xz_cli::run_cli;
+use xz_cli::{format_error_for_stderr, run_cli};
+
+const PROGRAM_NAME: &str = "xzdec";
 
 fn main() -> std::io::Result<()> {
     let opts = XzDecOpts::parse();
     let config = opts.config();
 
-    if let Err(err) = run_cli(opts.files(), &config, "xzdec") {
-        if !opts.is_quiet() {
-            eprintln!("xzdec: {err}");
+    if let Err(err) = run_cli(opts.files(), &config, PROGRAM_NAME) {
+        if let Some(msg) = format_error_for_stderr(PROGRAM_NAME, config.quiet, &err) {
+            eprintln!("{msg}");
         }
+
         process::exit(1);
     }
 

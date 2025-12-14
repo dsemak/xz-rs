@@ -37,9 +37,9 @@ pub struct UnxzOpts {
     #[arg(short = 'v', long = "verbose")]
     verbose: bool,
 
-    /// Quiet mode (suppress warnings)
-    #[arg(short = 'q', long = "quiet", conflicts_with = "verbose")]
-    pub quiet: bool,
+    /// Quiet mode (suppress warnings). Use twice to suppress errors too.
+    #[arg(short = 'q', long = "quiet", conflicts_with = "verbose", action = clap::ArgAction::Count)]
+    pub quiet: u8,
 
     /// Test compressed file integrity
     #[arg(short = 't', long = "test")]
@@ -106,7 +106,7 @@ mod tests {
             force: true,
             keep: false,
             verbose: true,
-            quiet: false,
+            quiet: 0,
             test: true,
             threads: Some(8),
             memory: Some(1024),

@@ -11,7 +11,7 @@ use xz_core::{
 };
 
 use crate::config::CliConfig;
-use crate::error::{Error, Result};
+use crate::error::{CliError, Error, Result};
 
 /// Compresses data from an input reader to an output writer.
 ///
@@ -50,9 +50,8 @@ pub fn compress_file(
     // not a separate level.
     let compression_level = match (config.level, config.extreme) {
         (Some(level), true) => Compression::Extreme(level as u8),
-        (Some(level), false) => {
-            Compression::try_from(level).map_err(|_| Error::InvalidCompressionLevel { level })?
-        }
+        (Some(level), false) => Compression::try_from(level)
+            .map_err(|_| CliError::from(Error::InvalidCompressionLevel { level }))?,
         (None, true) => Compression::Extreme(Compression::default().to_preset() as u8),
         (None, false) => Compression::default(),
     };
@@ -61,15 +60,17 @@ pub fn compress_file(
 
     // Set thread count if specified
     if let Some(threads) = config.threads {
-        let thread_count =
-            u32::try_from(threads).map_err(|_| Error::InvalidThreadCount { count: threads })?;
+        let thread_count = u32::try_from(threads)
+            .map_err(|_| CliError::from(Error::InvalidThreadCount { count: threads }))?;
         options = options.with_threads(xz_core::Threading::Exact(thread_count));
     }
 
     // Perform compression and handle errors
-    let summary = compress(&mut input, &mut output, &options).map_err(|e| Error::Compression {
-        path: "(input)".to_string(),
-        message: e.to_string(),
+    let summary = compress(&mut input, &mut output, &options).map_err(|e| {
+        CliError::from(Error::Compression {
+            path: "(input)".to_string(),
+            message: e.to_string(),
+        })
     })?;
 
     // Print output if verbose or robot mode is enabled
@@ -127,8 +128,8 @@ pub fn decompress_file(
 
     // Set thread count if specified
     if let Some(threads) = config.threads {
-        let thread_count =
-            u32::try_from(threads).map_err(|_| Error::InvalidThreadCount { count: threads })?;
+        let thread_count = u32::try_from(threads)
+            .map_err(|_| CliError::from(Error::InvalidThreadCount { count: threads }))?;
         options = options.with_threads(xz_core::Threading::Exact(thread_count));
     }
 
@@ -161,11 +162,12 @@ pub fn decompress_file(
     options = options.with_flags(flags);
 
     // Perform decompression and handle errors
-    let summary =
-        decompress(&mut input, &mut output, &options).map_err(|e| Error::Decompression {
+    let summary = decompress(&mut input, &mut output, &options).map_err(|e| {
+        CliError::from(Error::Decompression {
             path: "(input)".to_string(),
             message: e.to_string(),
-        })?;
+        })
+    })?;
 
     // Print output if verbose or robot mode is enabled
     if config.verbose || config.robot {
@@ -218,18 +220,20 @@ pub fn decompress_file(
 /// - Memory limit is exceeded during analysis
 pub fn list_file(input_path: &str, config: &CliConfig) -> Result<()> {
     // Open the file
-    let mut file = File::open(input_path).map_err(|source| Error::OpenInput {
-        path: input_path.to_string(),
-        source,
+    let mut file = File::open(input_path).map_err(|source| {
+        CliError::from(Error::OpenInput {
+            path: input_path.to_string(),
+            source,
+        })
     })?;
 
     // Extract file info
     let memlimit = config.memory_limit.and_then(std::num::NonZeroU64::new);
     let info = file_info::extract_file_info(&mut file, memlimit).map_err(|e| {
-        Error::FileInfoExtraction {
+        CliError::from(Error::FileInfoExtraction {
             path: input_path.to_string(),
             message: e.to_string(),
-        }
+        })
     })?;
 
     if config.robot {

@@ -152,10 +152,9 @@ fn generate_output_filename_decompress_invalid_extension() {
     let input = Path::new("test.txt");
     let result = generate_output_filename(input, OperationMode::Decompress, None, false);
     assert!(result.is_err());
-    // Verify it's the right error variant
     assert!(matches!(
         result.unwrap_err(),
-        Error::InvalidExtension { .. }
+        CliError::Warning(Warning::InvalidExtension { .. })
     ));
 }
 
@@ -211,7 +210,10 @@ fn generate_output_filename_decompress_custom_suffix_mismatch() {
     let input = Path::new("test.txt.xz");
     let result = generate_output_filename(input, OperationMode::Decompress, Some("myext"), false);
     assert!(result.is_err());
-    assert!(matches!(result, Err(Error::InvalidExtension { .. })));
+    assert!(matches!(
+        result,
+        Err(CliError::Warning(Warning::InvalidExtension { .. }))
+    ));
 }
 
 /// Test compression fails when file already has the target suffix
@@ -220,17 +222,26 @@ fn generate_output_filename_compress_already_has_suffix() {
     let input = Path::new("test.txt.xz");
     let result = generate_output_filename(input, OperationMode::Compress, None, false);
     assert!(result.is_err());
-    assert!(matches!(result, Err(Error::AlreadyHasSuffix { .. })));
+    assert!(matches!(
+        result,
+        Err(CliError::Warning(Warning::AlreadyHasSuffix { .. }))
+    ));
 
     let input = Path::new("test.custom");
     let result = generate_output_filename(input, OperationMode::Compress, Some("custom"), false);
     assert!(result.is_err());
-    assert!(matches!(result, Err(Error::AlreadyHasSuffix { .. })));
+    assert!(matches!(
+        result,
+        Err(CliError::Warning(Warning::AlreadyHasSuffix { .. }))
+    ));
 
     let input = Path::new("test.myext");
     let result = generate_output_filename(input, OperationMode::Compress, Some(".myext"), false);
     assert!(result.is_err());
-    assert!(matches!(result, Err(Error::AlreadyHasSuffix { .. })));
+    assert!(matches!(
+        result,
+        Err(CliError::Warning(Warning::AlreadyHasSuffix { .. }))
+    ));
 }
 
 /// Test compression with force flag allows files with target suffix
@@ -383,7 +394,10 @@ fn invalid_compression_level() {
     };
 
     let err = compress_file(Cursor::new(data), &mut output_vec, &config).unwrap_err();
-    assert!(matches!(err, Error::InvalidCompressionLevel { level: 300 }));
+    assert!(matches!(
+        err,
+        CliError::Error(Error::InvalidCompressionLevel { level: 300 })
+    ));
 }
 
 /// Test decompression with corrupted data
@@ -396,7 +410,7 @@ fn decompress_corrupted_data() {
     let config = CliConfig::default();
 
     let err = decompress_file(Cursor::new(corrupted_data), &mut output_vec, &config).unwrap_err();
-    assert!(matches!(err, Error::Decompression { .. }));
+    assert!(matches!(err, CliError::Error(Error::Decompression { .. })));
 }
 
 /// Test verbose flag behavior

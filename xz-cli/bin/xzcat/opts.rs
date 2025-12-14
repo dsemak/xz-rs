@@ -22,12 +22,12 @@ pub struct XzCatOpts {
     files: Vec<String>,
 
     /// Verbose mode
-    #[arg(short = 'v', long = "verbose")]
+    #[arg(short = 'v', long = "verbose", conflicts_with = "quiet")]
     verbose: bool,
 
-    /// Quiet mode (suppress warnings)
-    #[arg(short = 'q', long = "quiet")]
-    quiet: bool,
+    /// Quiet mode (suppress warnings). Use twice to suppress errors too.
+    #[arg(short = 'q', long = "quiet", conflicts_with = "verbose", action = clap::ArgAction::Count)]
+    quiet: u8,
 
     /// Use at most this many threads
     #[arg(short = 'T', long = "threads", value_name = "NUM")]
@@ -81,7 +81,7 @@ mod tests {
         let opts = XzCatOpts {
             files: vec!["input.xz".into()],
             verbose: true,
-            quiet: false,
+            quiet: 0,
             threads: Some(4),
             memory: Some(1024),
         };

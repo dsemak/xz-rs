@@ -62,7 +62,7 @@ impl XzDecOpts {
             keep: true,
             stdout: true,
             verbose: false,
-            quiet: false,
+            quiet: self.quiet,
             level: None,
             threads: None,
             memory_limit: self.memory,
@@ -82,6 +82,7 @@ impl XzDecOpts {
     }
 
     /// Check if quiet mode is enabled (suppress errors when -q specified twice)
+    #[cfg(test)]
     pub fn is_quiet(&self) -> bool {
         self.quiet >= 2
     }

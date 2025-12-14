@@ -55,9 +55,13 @@ pub struct XzOpts {
     #[arg(short = 'v', long = "verbose", conflicts_with = "quiet")]
     pub verbose: bool,
 
-    /// Quiet mode (suppress warnings)
-    #[arg(short = 'q', long = "quiet", conflicts_with = "verbose")]
-    pub quiet: bool,
+    /// Quiet mode (suppress warnings). Use twice to suppress errors too.
+    #[arg(short = 'q', long = "quiet", conflicts_with = "verbose", action = clap::ArgAction::Count)]
+    pub quiet: u8,
+
+    /// Compression preset level 0 (no compression, fastest)
+    #[arg(short = '0', group = "level")]
+    pub level_0: bool,
 
     /// Compression preset level 1 (fastest)
     #[arg(short = '1', group = "level")]
@@ -193,6 +197,7 @@ impl XzOpts {
     /// Get the compression level from the preset flags
     pub fn compression_level(&self) -> Option<u32> {
         [
+            (self.level_0, 0),
             (self.level_1, 1),
             (self.level_2, 2),
             (self.level_3, 3),
@@ -246,7 +251,8 @@ mod tests {
             force: false,
             keep: false,
             verbose: false,
-            quiet: false,
+            quiet: 0,
+            level_0: false,
             level_1: false,
             level_2: false,
             level_3: false,

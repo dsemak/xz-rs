@@ -6,7 +6,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use crate::config::{CliConfig, OperationMode, DEFAULT_BUFFER_SIZE, LZMA_EXTENSION, XZ_EXTENSION};
-use crate::error::{Error, Result};
+use crate::error::{CliError, Error, Result, Warning};
 
 /// Checks if a file path has a recognized compression extension.
 ///
@@ -68,10 +68,10 @@ pub fn generate_output_filename(
                 if let Some(file_name) = input.file_name().and_then(OsStr::to_str) {
                     let target_suffix = format!(".{extension}");
                     if file_name.ends_with(&target_suffix) {
-                        return Err(Error::AlreadyHasSuffix {
+                        return Err(CliError::from(Warning::AlreadyHasSuffix {
                             path: input.to_path_buf(),
                             suffix: target_suffix,
-                        });
+                        }));
                     }
                 }
             }
@@ -109,16 +109,16 @@ pub fn generate_output_filename(
                     }
                 }
 
-                return Err(Error::InvalidExtension {
+                return Err(CliError::from(Warning::InvalidExtension {
                     path: input.to_path_buf(),
-                });
+                }));
             }
 
             // Ensure the input file has a recognized compression extension
             if !has_compression_extension(input) {
-                return Err(Error::InvalidExtension {
+                return Err(CliError::from(Warning::InvalidExtension {
                     path: input.to_path_buf(),
-                });
+                }));
             }
 
             // Get the file stem (filename without last extension)
@@ -126,7 +126,8 @@ pub fn generate_output_filename(
                 .file_stem()
                 .ok_or_else(|| Error::InvalidOutputFilename {
                     path: input.to_path_buf(),
-                })?;
+                })
+                .map_err(CliError::from)?;
 
             // Use the parent directory, or current directory if none
             let parent = input.parent().unwrap_or_else(|| Path::new("."));
@@ -160,9 +161,11 @@ pub fn open_input(path: &str) -> Result<Box<dyn io::Read>> {
             io::stdin(),
         )))
     } else {
-        let file = File::open(path).map_err(|source| Error::OpenInput {
-            path: path.to_string(),
-            source,
+        let file = File::open(path).map_err(|source| {
+            CliError::from(Error::OpenInput {
+                path: path.to_string(),
+                source,
+            })
         })?;
         Ok(Box::new(io::BufReader::with_capacity(
             DEFAULT_BUFFER_SIZE,
@@ -203,13 +206,15 @@ pub fn open_output(path: Option<&Path>, config: &CliConfig) -> Result<Box<dyn io
     } else if let Some(path) = path {
         // Check if output file exists and we're not forcing overwrite
         if path.exists() && !config.force {
-            return Err(Error::OutputExists {
+            return Err(CliError::from(Error::OutputExists {
                 path: path.to_path_buf(),
-            });
+            }));
         }
-        let file = File::create(path).map_err(|source| Error::CreateOutput {
-            path: path.to_path_buf(),
-            source,
+        let file = File::create(path).map_err(|source| {
+            CliError::from(Error::CreateOutput {
+                path: path.to_path_buf(),
+                source,
+            })
         })?;
 
         Ok(Box::new(io::BufWriter::with_capacity(

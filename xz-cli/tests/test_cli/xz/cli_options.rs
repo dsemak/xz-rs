@@ -2,12 +2,12 @@ use crate::add_test;
 use crate::common::{generate_random_data, Fixture};
 use crate::{KB, MB};
 
-// Test all compression levels (1-9)
+// Test all compression levels (0-9)
 add_test!(compression_levels, async {
     const FILE_NAME: &str = "levels_test.txt";
     let data = generate_random_data(MB);
 
-    for level in 1..=9 {
+    for level in 0..=9 {
         let mut fixture = Fixture::with_file(FILE_NAME, &data);
 
         let file_path = fixture.path(FILE_NAME);
@@ -17,7 +17,7 @@ add_test!(compression_levels, async {
         let output = fixture
             .run_cargo("xz", &[&format!("-{}", level), "-k", &file_path])
             .await;
-        assert!(output.status.success(), "Level {} failed", level);
+        assert!(output.status.success());
 
         fixture.remove_file(FILE_NAME);
 
@@ -43,7 +43,7 @@ add_test!(thread_option, async {
         let output = fixture
             .run_cargo("xz", &[&format!("-T{}", threads), "-k", &file_path])
             .await;
-        assert!(output.status.success(), "Thread count {} failed", threads);
+        assert!(output.status.success());
 
         // Verify decompression works
         let output = fixture
@@ -121,6 +121,59 @@ add_test!(quiet_option, async {
     assert!(output.status.success());
 
     // No output expected (unless there's an error)
+    assert!(output.stderr.is_empty());
+});
+
+// Test -qq (double quiet) option suppresses errors too
+add_test!(double_quiet_option, async {
+    const FILE_NAME: &str = "double_quiet_test.txt";
+    let data = generate_random_data(KB);
+
+    let mut fixture = Fixture::with_file(FILE_NAME, &data);
+
+    let file_path = fixture.path(FILE_NAME);
+
+    // Compress with double quiet (-qq)
+    let output = fixture.run_cargo("xz", &["-qq", &file_path]).await;
+    assert!(output.status.success());
+
+    // No output expected at all
+    assert!(output.stderr.is_empty());
+    assert!(output.stdout.is_empty());
+});
+
+// Test -q doesn't suppress runtime errors (but does suppress warnings elsewhere)
+add_test!(quiet_does_not_suppress_errors, async {
+    let mut fixture = Fixture::with_file("dummy.txt", b"dummy");
+
+    let missing = fixture.path("this-file-does-not-exist.txt");
+    let output = fixture.run_cargo("xz", &["-q", &missing]).await;
+
+    assert!(!output.status.success());
+    assert!(!output.stderr.is_empty());
+});
+
+// Test -qq suppresses runtime error messages like upstream xz
+add_test!(double_quiet_suppresses_errors, async {
+    let mut fixture = Fixture::with_file("dummy.txt", b"dummy");
+
+    let missing = fixture.path("this-file-does-not-exist.txt");
+    let output = fixture.run_cargo("xz", &["-qq", &missing]).await;
+
+    assert!(!output.status.success());
+    assert!(output.stderr.is_empty());
+});
+
+// Test -q suppresses warning-like messages ("already has .xz suffix, skipping")
+add_test!(quiet_suppresses_already_has_suffix_warning, async {
+    const FILE_NAME: &str = "already_warning.xz";
+    let data = generate_random_data(KB);
+
+    let mut fixture = Fixture::with_file(FILE_NAME, &data);
+    let file_path = fixture.path(FILE_NAME);
+
+    let output = fixture.run_cargo("xz", &["-q", &file_path]).await;
+    assert!(!output.status.success());
     assert!(output.stderr.is_empty());
 });
 

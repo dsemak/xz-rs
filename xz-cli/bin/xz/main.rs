@@ -9,7 +9,9 @@ mod opts;
 
 use opts::XzOpts;
 
-use xz_cli::run_cli;
+use xz_cli::{format_error_for_stderr, run_cli};
+
+const PROGRAM_NAME: &str = "xz";
 
 fn main() -> std::io::Result<()> {
     let opts = XzOpts::parse();
@@ -17,13 +19,20 @@ fn main() -> std::io::Result<()> {
     let config = match opts.config() {
         Ok(config) => config,
         Err(err) => {
-            eprintln!("xz: {err}");
+            // Match upstream `xz`: `-qq` suppresses runtime error messages but does
+            // not suppress clap's own argument parsing errors.
+            if opts.quiet < 2 {
+                eprintln!("{PROGRAM_NAME}: {err}");
+            }
+
             process::exit(1);
         }
     };
 
-    if let Err(err) = run_cli(&opts.files, &config, "xz") {
-        eprintln!("xz: {err}");
+    if let Err(err) = run_cli(&opts.files, &config, PROGRAM_NAME) {
+        if let Some(msg) = format_error_for_stderr(PROGRAM_NAME, config.quiet, &err) {
+            eprintln!("{msg}");
+        }
         process::exit(1);
     }
 

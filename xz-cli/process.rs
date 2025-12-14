@@ -4,7 +4,7 @@ use std::io;
 use std::path::PathBuf;
 
 use crate::config::{CliConfig, OperationMode};
-use crate::error::{Error, Result};
+use crate::error::{CliError, Error, InvocationError, Result};
 use crate::io::{generate_output_filename, open_input, open_output};
 use crate::operations::{compress_file, decompress_file, list_file};
 
@@ -32,9 +32,11 @@ pub fn cleanup_input_file(input_path: &str, config: &CliConfig) -> Result<()> {
     }
 
     if !config.keep && !input_path.is_empty() && !config.stdout {
-        std::fs::remove_file(input_path).map_err(|source| Error::RemoveFile {
-            path: input_path.to_string(),
-            source,
+        std::fs::remove_file(input_path).map_err(|source| {
+            CliError::from(Error::RemoveFile {
+                path: input_path.to_string(),
+                source,
+            })
         })?;
 
         if config.verbose {
@@ -159,14 +161,16 @@ pub fn process_file(input_path: &str, config: &CliConfig) -> Result<()> {
 /// - The numeric part cannot be parsed as a valid [`u64`]
 /// - The suffix is not one of K, M, G, or a digit
 /// - The result would overflow [`u64`] after applying the multiplier
-pub fn parse_memory_limit(s: &str) -> std::result::Result<u64, Error> {
+pub fn parse_memory_limit(s: &str) -> std::result::Result<u64, CliError> {
     const KB: u64 = 1024;
     const MB: u64 = KB * 1024;
     const GB: u64 = MB * 1024;
 
     let s = s.trim();
     if s.is_empty() {
-        return Err(Error::InvalidMemoryLimit("Empty memory limit".to_string()));
+        return Err(CliError::from(Error::InvalidMemoryLimit(
+            "Empty memory limit".to_string(),
+        )));
     }
 
     let (number_part, multiplier) = if let Some(last_char) = s.chars().last() {
@@ -176,22 +180,26 @@ pub fn parse_memory_limit(s: &str) -> std::result::Result<u64, Error> {
             'G' => (&s[..s.len() - 1], GB),
             _ if last_char.is_ascii_digit() => (s, 1),
             _ => {
-                return Err(Error::InvalidMemoryLimit(format!(
+                return Err(CliError::from(Error::InvalidMemoryLimit(format!(
                     "Invalid memory limit suffix: {last_char}"
-                )))
+                ))))
             }
         }
     } else {
         (s, 1)
     };
 
-    let number: u64 = number_part
-        .parse()
-        .map_err(|_| Error::InvalidMemoryLimit(format!("Invalid number: {number_part}")))?;
+    let number: u64 = number_part.parse().map_err(|_| {
+        CliError::from(Error::InvalidMemoryLimit(format!(
+            "Invalid number: {number_part}"
+        )))
+    })?;
 
-    number
-        .checked_mul(multiplier)
-        .ok_or_else(|| Error::InvalidMemoryLimit("Memory limit too large (overflow)".to_string()))
+    number.checked_mul(multiplier).ok_or_else(|| {
+        CliError::from(Error::InvalidMemoryLimit(
+            "Memory limit too large (overflow)".to_string(),
+        ))
+    })
 }
 
 /// Runs a CLI command over multiple input files with error context.
@@ -217,11 +225,22 @@ pub fn parse_memory_limit(s: &str) -> std::result::Result<u64, Error> {
 /// at the first error
 pub fn run_cli(files: &[String], config: &CliConfig, program: &str) -> io::Result<()> {
     if files.is_empty() {
-        process_file("", config).map_err(|_| io::Error::other(format!("{program}: (stdin)")))?;
+        process_file("", config).map_err(|err| {
+            io::Error::other(InvocationError {
+                program: program.to_string(),
+                file: None,
+                source: err,
+            })
+        })?;
     } else {
         for file in files {
-            process_file(file, config)
-                .map_err(|err| io::Error::other(format!("{program}: {file}: {err}")))?;
+            process_file(file, config).map_err(|err| {
+                io::Error::other(InvocationError {
+                    program: program.to_string(),
+                    file: Some(file.to_string()),
+                    source: err,
+                })
+            })?;
         }
     }
 
