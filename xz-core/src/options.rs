@@ -151,7 +151,11 @@ impl CompressionOptions {
     }
 
     pub(crate) fn build_encoder(&self) -> Result<Encoder> {
-        let threads = sanitize_threads(self.threads)?;
+        let threads = match sanitize_threads(self.threads) {
+            Ok(count) => count.max(1),
+            Err(Error::InvalidThreadCount { maximum, .. }) => maximum.max(1),
+            Err(other) => return Err(other),
+        };
         let stream = Stream::default();
 
         if threads <= 1
@@ -165,7 +169,7 @@ impl CompressionOptions {
         let mut options = EncoderMtOptions::default()
             .with_level(self.level)
             .with_check(self.check)
-            .with_threads(threads.max(1));
+            .with_threads(threads);
 
         if let Some(block) = self.block_size {
             options = options.with_block_size(block.get());

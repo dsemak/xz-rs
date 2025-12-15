@@ -694,26 +694,26 @@ mod tests {
         }
     });
 
-    // Test error handling - invalid thread count
-    async_test!(error_invalid_thread_count, {
+    // Test oversized thread count handling (should be clamped, not fail).
+    async_test!(oversized_thread_count_is_clamped, {
         const THREAD_COUNT: u32 = 1000;
 
-        // Try to use too many threads - this should fail during options building
+        // Requesting an oversized explicit thread count should not fail; the encoder
+        // will clamp it to a safe maximum at runtime.
         let options = CompressionOptions::default().with_threads(Threading::Exact(THREAD_COUNT));
         let mut compressed = Vec::new();
-        let result = compress_async(SAMPLE, &mut compressed, &options).await;
+        let compression_summary = compress_async(SAMPLE, &mut compressed, &options)
+            .await
+            .unwrap();
+        assert!(compression_summary.bytes_written > 0);
 
-        // Should fail with InvalidThreadCount error
-        assert!(result.is_err());
-        if let Err(crate::error::Error::InvalidThreadCount {
-            requested,
-            maximum: _,
-        }) = result
-        {
-            assert_eq!(requested, THREAD_COUNT);
-        } else {
-            panic!("Expected InvalidThreadCount error, got: {result:?}");
-        }
+        // The produced stream must still be decodable.
+        let mut decompressed = Vec::new();
+        let options = DecompressionOptions::default();
+        let _ = decompress_async(compressed.as_slice(), &mut decompressed, &options)
+            .await
+            .unwrap();
+        assert!(decompressed == SAMPLE);
     });
 
     // Test error handling - corrupted data
