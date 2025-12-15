@@ -3,17 +3,26 @@
 use std::io::{Read, Seek, SeekFrom};
 use std::num::NonZeroU64;
 
-use lzma_safe::{
-    Action, BlockInfo as LzmaBlockInfo, FileInfoDecoder, IndexEntry, Stream,
-    StreamInfo as LzmaStreamInfo,
-};
+use lzma_safe::stream::StreamFlags;
+use lzma_safe::{BlockInfo as LzmaBlockInfo, Index, IndexEntry, StreamInfo as LzmaStreamInfo};
 
 use crate::{Error, Result};
 
+/// Size of an XZ Stream Header/Footer in bytes.
+const STREAM_HEADER_SIZE: usize = lzma_safe::stream::HEADER_SIZE;
+const STREAM_HEADER_SIZE_U64: u64 = STREAM_HEADER_SIZE as u64;
+
+/// Stream Padding is a sequence of `0x00` bytes whose size is a multiple of four bytes.
+const STREAM_PADDING_ALIGNMENT_BYTES: u64 = 4;
+const STREAM_PADDING_WORD_SIZE: usize = STREAM_PADDING_ALIGNMENT_BYTES as usize;
+
+/// Minimum size of a valid XZ stream: header + footer.
+const MIN_STREAM_SIZE: u64 = 2 * STREAM_HEADER_SIZE_U64;
+
 /// Detailed information about an XZ file including streams and blocks.
 pub struct FileInfo {
-    /// Decoder that owns the index
-    decoder: FileInfoDecoder,
+    /// Decoded Index for the whole file (may contain multiple Streams).
+    index: Index,
     /// Total file size
     file_size: u64,
 }
@@ -21,12 +30,12 @@ pub struct FileInfo {
 impl FileInfo {
     /// Get the number of streams in the file.
     pub fn stream_count(&self) -> u64 {
-        self.decoder.index().map_or(0, |index| index.stream_count())
+        self.index.stream_count()
     }
 
     /// Get the total number of blocks in all streams.
     pub fn block_count(&self) -> u64 {
-        self.decoder.index().map_or(0, |index| index.block_count())
+        self.index.block_count()
     }
 
     /// Get the compressed file size.
@@ -36,14 +45,12 @@ impl FileInfo {
 
     /// Get the total uncompressed size.
     pub fn uncompressed_size(&self) -> u64 {
-        self.decoder
-            .index()
-            .map_or(0, |index| index.uncompressed_size())
+        self.index.uncompressed_size()
     }
 
     /// Get the bitmask of integrity checks used.
     pub fn checks(&self) -> u32 {
-        self.decoder.index().map_or(0, |index| index.checks())
+        self.index.checks()
     }
 
     /// Collect all streams into a vector.
@@ -52,40 +59,30 @@ impl FileInfo {
     ///
     /// Returns a vector of [`StreamInfo`] objects.
     pub fn streams(&self) -> Vec<StreamInfo> {
-        self.decoder
-            .index()
-            .map(|index| {
-                index
-                    .iter_streams()
-                    .filter_map(|entry| {
-                        if let IndexEntry::Stream(info) = entry {
-                            Some(StreamInfo::from_lzma_stream_info(info))
-                        } else {
-                            None
-                        }
-                    })
-                    .collect()
+        self.index
+            .iter_streams()
+            .filter_map(|entry| {
+                if let IndexEntry::Stream(info) = entry {
+                    Some(StreamInfo::from_lzma_stream_info(info))
+                } else {
+                    None
+                }
             })
-            .unwrap_or_default()
+            .collect()
     }
 
     /// Returns a vector containing metadata for all blocks within the XZ file.
     pub fn blocks(&self) -> Vec<BlockInfo> {
-        self.decoder
-            .index()
-            .map(|index| {
-                index
-                    .iter_blocks()
-                    .filter_map(|entry| {
-                        if let IndexEntry::Block(info) = entry {
-                            Some(BlockInfo::from_lzma_block_info(info))
-                        } else {
-                            None
-                        }
-                    })
-                    .collect()
+        self.index
+            .iter_blocks()
+            .filter_map(|entry| {
+                if let IndexEntry::Block(info) = entry {
+                    Some(BlockInfo::from_lzma_block_info(info))
+                } else {
+                    None
+                }
             })
-            .unwrap_or_default()
+            .collect()
     }
 }
 
@@ -155,6 +152,134 @@ impl BlockInfo {
     }
 }
 
+/// Read exactly `buf.len()` bytes at an absolute file offset.
+fn read_exact_at<R: Read + Seek>(reader: &mut R, offset: u64, buf: &mut [u8]) -> Result<()> {
+    reader.seek(SeekFrom::Start(offset))?;
+    reader.read_exact(buf)?;
+    Ok(())
+}
+
+/// Read an XZ Stream Header (`LZMA_STREAM_HEADER_SIZE`) at an absolute file offset.
+fn read_stream_header_at<R: Read + Seek>(
+    reader: &mut R,
+    offset: u64,
+) -> Result<[u8; STREAM_HEADER_SIZE]> {
+    let mut header = [0u8; STREAM_HEADER_SIZE];
+    read_exact_at(reader, offset, &mut header)?;
+    Ok(header)
+}
+
+/// Read an XZ Stream Footer (`LZMA_STREAM_HEADER_SIZE`) at an absolute file offset.
+fn read_stream_footer_at<R: Read + Seek>(
+    reader: &mut R,
+    offset: u64,
+) -> Result<[u8; STREAM_HEADER_SIZE]> {
+    let mut footer = [0u8; STREAM_HEADER_SIZE];
+    read_exact_at(reader, offset, &mut footer)?;
+    Ok(footer)
+}
+
+/// Returns `true` if the given padding word is all zero bytes.
+fn is_zero_padding_word(word: &[u8; STREAM_PADDING_WORD_SIZE]) -> bool {
+    word.iter().all(|b| *b == 0)
+}
+
+/// Consume Stream Padding bytes preceding `pos`.
+///
+/// Returns `(new_pos, padding_len)` where `new_pos` points to the end of the Stream Footer.
+fn consume_stream_padding<R: Read + Seek>(reader: &mut R, mut pos: u64) -> Result<(u64, u64)> {
+    let mut padding: u64 = 0;
+
+    while pos >= STREAM_PADDING_ALIGNMENT_BYTES {
+        let mut word = [0u8; STREAM_PADDING_WORD_SIZE];
+        read_exact_at(reader, pos - STREAM_PADDING_ALIGNMENT_BYTES, &mut word)?;
+        if is_zero_padding_word(&word) {
+            padding += STREAM_PADDING_ALIGNMENT_BYTES;
+            pos -= STREAM_PADDING_ALIGNMENT_BYTES;
+        } else {
+            break;
+        }
+    }
+
+    Ok((pos, padding))
+}
+
+/// Validate the Index size from Stream Footer and convert it to `usize`.
+///
+/// The XZ format stores Index size (Backward Size) in bytes and it must be
+/// a multiple of four bytes.
+fn checked_index_len(index_size: u64) -> Result<usize> {
+    if !index_size.is_multiple_of(STREAM_PADDING_ALIGNMENT_BYTES) {
+        return Err(Error::InvalidOption(
+            "Index size in Stream Footer is not a multiple of 4".into(),
+        ));
+    }
+
+    usize::try_from(index_size)
+        .map_err(|_| Error::InvalidOption("Index size is too large for this platform".into()))
+}
+
+/// Parse a single XZ Stream by reading the Stream Footer, Index field, and Stream Header.
+///
+/// Returns the decoded [`Index`] and the Stream start offset.
+fn parse_stream_from_end<R: Read + Seek>(
+    reader: &mut R,
+    footer_end: u64,
+    memlimit: u64,
+) -> Result<(Index, u64)> {
+    if footer_end < MIN_STREAM_SIZE {
+        return Err(Error::InvalidOption(
+            "File is too small to contain a complete XZ stream".into(),
+        ));
+    }
+
+    let footer_start = footer_end - STREAM_HEADER_SIZE_U64;
+    let footer = read_stream_footer_at(reader, footer_start)?;
+
+    let footer_flags = StreamFlags::decode_footer(&footer).map_err(Error::Backend)?;
+    let Some(index_size_u64) = footer_flags.backward_size else {
+        return Err(Error::InvalidOption(
+            "Stream Footer did not contain Backward Size".into(),
+        ));
+    };
+
+    let index_len = checked_index_len(index_size_u64)?;
+
+    let index_end = footer_start;
+    if index_end < index_size_u64 {
+        return Err(Error::InvalidOption(
+            "Stream Footer Backward Size points outside of the file".into(),
+        ));
+    }
+    let index_start = index_end - index_size_u64;
+
+    let mut index_buf = vec![0u8; index_len];
+    read_exact_at(reader, index_start, &mut index_buf)?;
+
+    let mut index = Index::decode_xz_index_field(&index_buf, memlimit).map_err(Error::Backend)?;
+    index
+        .set_stream_flags_from_footer(&footer)
+        .map_err(Error::Backend)?;
+
+    let stream_size = index.stream_size();
+    if stream_size < MIN_STREAM_SIZE {
+        return Err(Error::InvalidOption(
+            "Decoded stream size is too small".into(),
+        ));
+    }
+    if stream_size > footer_end {
+        return Err(Error::InvalidOption(
+            "Decoded stream size points outside of the file".into(),
+        ));
+    }
+
+    let stream_start = footer_end - stream_size;
+    let header = read_stream_header_at(reader, stream_start)?;
+    StreamFlags::compare_header_footer(&header, &footer).map_err(Error::Backend)?;
+
+    Ok((index, stream_start))
+}
+
 /// Extracts file information from an XZ file.
 ///
 /// This function reads the XZ file index without decompressing the actual data,
@@ -181,129 +306,65 @@ pub fn extract_file_info<R: Read + Seek>(
     reader: &mut R,
     memlimit: Option<NonZeroU64>,
 ) -> Result<FileInfo> {
-    // Get file size by seeking to the end
     let file_size = reader.seek(SeekFrom::End(0))?;
-
-    // Check if file is empty
     if file_size == 0 {
         return Err(Error::InvalidOption("File is empty".into()));
     }
 
-    // Check minimum file size (12 bytes for stream header + 12 bytes for stream footer)
-    const MIN_XZ_SIZE: u64 = 2 * lzma_safe::stream::HEADER_SIZE as u64;
-    if file_size < MIN_XZ_SIZE {
+    if file_size < MIN_STREAM_SIZE {
         return Err(Error::InvalidOption(
             "File is too small to be a valid XZ file".into(),
         ));
     }
 
-    // Seek back to the beginning
-    reader.seek(SeekFrom::Start(0))?;
-
-    // Create decoder with memory limit
     let memlimit_value = memlimit.map_or(u64::MAX, |v| v.get());
-    let mut decoder = Stream::default().file_info_decoder(memlimit_value, file_size)?;
 
-    // Read and process the file in chunks
-    const CHUNK_SIZE: usize = 64 * 1024; // 64 KB chunks
-    let mut buffer = vec![0u8; CHUNK_SIZE];
-    // Number of bytes currently pending (available at the start of `buffer`)
-    let mut pending_len: usize = 0;
-    // Action to use for the next decoder call
-    let mut action = Action::Run;
+    // Parse concatenated Streams from the end of the file.
+    let mut pos = file_size;
+    let mut indices_rev: Vec<Index> = Vec::new();
 
-    loop {
-        // Ensure we have some input to feed the decoder, or we're finishing.
-        if pending_len == 0 && action != Action::Finish {
-            let read = reader.read(&mut buffer)?;
-            if read == 0 {
-                // No more data available; switch to Finish to let decoder complete.
-                action = Action::Finish;
-            } else {
-                pending_len = read;
-            }
-        }
+    while pos > 0 {
+        // Stream Padding consists of 0x00 bytes and its size is a multiple of four bytes.
+        let (footer_end, padding) = consume_stream_padding(reader, pos)?;
 
-        // Feed the pending input to the decoder.
-        match decoder.process(&buffer[..pending_len], action) {
-            Ok(consumed) => {
-                if decoder.is_finished() {
-                    break;
-                }
+        let (mut index, stream_start) = parse_stream_from_end(reader, footer_end, memlimit_value)?;
+        index.set_stream_padding(padding).map_err(Error::Backend)?;
 
-                if consumed == 0 {
-                    // Decoder made no progress with current input.
-                    if action == Action::Finish {
-                        // We're already finishing but decoder didn't complete.
-                        return Err(Error::InvalidOption(
-                            "Decoder did not finish after processing all available data".into(),
-                        ));
-                    }
+        indices_rev.push(index);
+        pos = stream_start;
 
-                    // Read more data and append.
-                    // Grow the buffer if it's full.
-                    if pending_len == buffer.len() {
-                        let grow_by = CHUNK_SIZE;
-                        // Try to reserve to avoid potential OOM aborts on resize
-                        buffer
-                            .try_reserve(grow_by)
-                            .map_err(|_| Error::AllocationFailed {
-                                capacity: buffer.len() + grow_by,
-                            })?;
-                        let old_len = buffer.len();
-                        buffer.resize(old_len + grow_by, 0);
-                    }
-
-                    // Read after the pending bytes to extend the available window.
-                    let read = reader.read(&mut buffer[pending_len..])?;
-                    if read == 0 {
-                        // No more bytes available; switch to Finish to let decoder complete.
-                        action = Action::Finish;
-                    } else {
-                        pending_len += read;
-                    }
-                    // Continue the loop to process with the extended input.
-                } else {
-                    // Move the unconsumed tail to the beginning of the buffer.
-                    let remaining = pending_len - consumed;
-                    if remaining > 0 {
-                        buffer.copy_within(consumed..pending_len, 0);
-                    }
-                    pending_len = remaining;
-                    // On next iteration we will either read more (if remaining == 0)
-                    // or continue processing the remaining bytes.
-                }
-            }
-            Err(lzma_safe::Error::SeekNeeded) => {
-                // Decoder needs to seek to a specific position.
-                // liblzma won't ask to seek past the known size of the input file.
-                let seek_pos = decoder.seek_pos();
-                reader.seek(SeekFrom::Start(seek_pos))?;
-
-                // In C example they set strm->avail_in = 0 after LZMA_SEEK_NEEDED.
-                // This clears the internal state. Try calling process() with empty
-                // input to achieve the same effect.
-                let _ = decoder.process(&[], Action::Run);
-
-                // The old data in the buffer is useless now. Set pending_len to zero
-                // so that we will read new input from the new file position on the
-                // next iteration of this loop (even if seek_pos equals the current position).
-                pending_len = 0;
-                // Always resume with Run after seek.
-                action = Action::Run;
-            }
-            Err(e) => {
-                return Err(Error::Backend(e));
-            }
+        // If we've reached the beginning, stop.
+        if pos == 0 {
+            break;
         }
     }
 
-    Ok(FileInfo { decoder, file_size })
+    if indices_rev.is_empty() {
+        return Err(Error::InvalidOption(
+            "No XZ streams were found in the input".into(),
+        ));
+    }
+
+    indices_rev.reverse();
+    let mut it = indices_rev.into_iter();
+    let mut combined = it
+        .next()
+        .ok_or_else(|| Error::InvalidOption("No XZ streams were found in the input".into()))?;
+    for idx in it {
+        combined.append(idx).map_err(Error::Backend)?;
+    }
+
+    Ok(FileInfo {
+        index: combined,
+        file_size,
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use std::io::Cursor;
+
+    use lzma_safe::{Action, Stream};
 
     use crate::ratio;
 

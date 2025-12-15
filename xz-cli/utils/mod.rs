@@ -4,3 +4,6 @@
 //! entrypoints but don't belong to the higher-level CLI orchestration layers.
 
 pub mod argfiles;
+
+pub(crate) mod bytes;
+pub(crate) mod math;

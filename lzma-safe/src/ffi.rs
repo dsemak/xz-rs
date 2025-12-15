@@ -1,7 +1,10 @@
 //! Thin wrappers around the `liblzma` FFI calls used by the safe API.
 
+use std::ptr;
+
 use crate::error::{result_from_lzma_ret, Result};
-use crate::{decoder, encoder, Action, Index, IndexIterMode, IndexIterator, Stream};
+use crate::stream::StreamFlags;
+use crate::{decoder, encoder, Action, Error, Index, IndexIterMode, IndexIterator, Stream};
 
 /// Call `lzma_code` with a safe return type.
 pub(crate) fn lzma_code(stream: &mut Stream, action: Action) -> Result<()> {
@@ -182,6 +185,148 @@ pub(crate) fn lzma_index_uncompressed_size(index: &Index) -> u64 {
 pub(crate) fn lzma_index_checks(index: &Index) -> u32 {
     // SAFETY: The index pointer is valid and owned by the caller.
     unsafe { liblzma_sys::lzma_index_checks(index.as_ptr()) }
+}
+
+/// Decode XZ Stream Header flags into a Rust structure.
+pub(crate) fn decode_stream_header_flags(
+    input: &[u8; crate::stream::HEADER_SIZE],
+) -> Result<StreamFlags> {
+    // SAFETY: `lzma_stream_flags` is a plain C struct; all-zero initialization is valid.
+    let mut raw: liblzma_sys::lzma_stream_flags = unsafe { std::mem::zeroed() };
+    // SAFETY: `raw` is a valid out-pointer and `input` points to
+    // `LZMA_STREAM_HEADER_SIZE` bytes.
+    let ret =
+        unsafe { liblzma_sys::lzma_stream_header_decode(ptr::from_mut(&mut raw), input.as_ptr()) };
+    result_from_lzma_ret(ret, ())?;
+
+    // SAFETY: `raw` is initialized by liblzma.
+    unsafe { StreamFlags::from_raw(ptr::from_ref(&raw)) }.ok_or(Error::OptionsError)
+}
+
+/// Decode XZ Stream Footer flags.
+pub(crate) fn decode_stream_footer_flags(
+    input: &[u8; crate::stream::HEADER_SIZE],
+) -> Result<StreamFlags> {
+    // SAFETY: `lzma_stream_flags` is a plain C struct; all-zero initialization is valid.
+    let mut flags: liblzma_sys::lzma_stream_flags = unsafe { std::mem::zeroed() };
+    // SAFETY:
+    // - `flags` is a valid out-pointer for liblzma to write to.
+    // - `input.as_ptr()` points to exactly `LZMA_STREAM_HEADER_SIZE` bytes.
+    let ret = unsafe {
+        liblzma_sys::lzma_stream_footer_decode(ptr::from_mut(&mut flags), input.as_ptr())
+    };
+    result_from_lzma_ret(ret, ())?;
+
+    // SAFETY: `flags` is initialized by liblzma.
+    unsafe { StreamFlags::from_raw(ptr::from_ref(&flags)) }.ok_or(Error::OptionsError)
+}
+
+/// Decode and compare Stream Header and Stream Footer flags.
+pub(crate) fn compare_stream_header_footer(
+    header: &[u8; crate::stream::HEADER_SIZE],
+    footer: &[u8; crate::stream::HEADER_SIZE],
+) -> Result<()> {
+    // SAFETY: `lzma_stream_flags` is a plain C struct; all-zero initialization is valid.
+    let mut hdr: liblzma_sys::lzma_stream_flags = unsafe { std::mem::zeroed() };
+    let mut ftr: liblzma_sys::lzma_stream_flags = unsafe { std::mem::zeroed() };
+    // SAFETY:
+    // - `hdr` is a valid out-pointer for liblzma to write to.
+    // - `header.as_ptr()` points to exactly `LZMA_STREAM_HEADER_SIZE` bytes.
+    let ret =
+        unsafe { liblzma_sys::lzma_stream_header_decode(ptr::from_mut(&mut hdr), header.as_ptr()) };
+    result_from_lzma_ret(ret, ())?;
+
+    // SAFETY:
+    // - `ftr` is a valid out-pointer for liblzma to write to.
+    // - `footer.as_ptr()` points to exactly `LZMA_STREAM_HEADER_SIZE` bytes.
+    let ret =
+        unsafe { liblzma_sys::lzma_stream_footer_decode(ptr::from_mut(&mut ftr), footer.as_ptr()) };
+    result_from_lzma_ret(ret, ())?;
+
+    // SAFETY: Both pointers are valid for the duration of the call.
+    let ret =
+        unsafe { liblzma_sys::lzma_stream_flags_compare(ptr::from_ref(&hdr), ptr::from_ref(&ftr)) };
+    result_from_lzma_ret(ret, ())
+}
+
+/// Decode an XZ Index field from a buffer.
+///
+/// Returns the decoded [`Index`] and the number of bytes consumed.
+pub(crate) fn decode_xz_index_field(
+    memlimit: &mut u64,
+    input: &[u8],
+    allocator: Option<&crate::stream::LzmaAllocator>,
+) -> Result<(Index, usize)> {
+    let allocator_ptr = allocator.map_or(std::ptr::null(), crate::stream::LzmaAllocator::as_ptr);
+    let mut index_ptr: *mut liblzma_sys::lzma_index = ptr::null_mut();
+    let mut in_pos: usize = 0;
+
+    // SAFETY:
+    // - `index_ptr` is a valid out-pointer for liblzma to write to.
+    // - `memlimit` is a valid in/out pointer; liblzma may update it on
+    //   `LZMA_MEMLIMIT_ERROR`.
+    // - `allocator_ptr` is either NULL (use malloc/free) or points to a valid
+    //   liblzma allocator vtable for the duration of the call.
+    // - `input.as_ptr()` points to `input.len()` readable bytes.
+    // - `in_pos` is a valid out-pointer; liblzma updates it on success.
+    let ret = unsafe {
+        liblzma_sys::lzma_index_buffer_decode(
+            ptr::from_mut(&mut index_ptr),
+            ptr::from_mut(memlimit),
+            allocator_ptr,
+            input.as_ptr(),
+            ptr::from_mut(&mut in_pos),
+            input.len(),
+        )
+    };
+    result_from_lzma_ret(ret, ())?;
+
+    // SAFETY: `index_ptr` is returned by liblzma on success and ownership is transferred to `Index`.
+    let index = unsafe { Index::from_raw(index_ptr, None).ok_or(Error::MemError)? };
+    Ok((index, in_pos))
+}
+
+/// Set Stream Flags for the last Stream in an index.
+pub(crate) fn lzma_index_stream_flags(index: &mut Index, flags: &StreamFlags) -> Result<()> {
+    let raw = flags.to_raw();
+    // SAFETY:
+    // - `index.as_mut_ptr()` is a valid pointer to an `lzma_index` owned by `Index`.
+    // - `raw` is a properly initialized `lzma_stream_flags` value.
+    let ret = unsafe { liblzma_sys::lzma_index_stream_flags(index.as_mut_ptr(), &raw) };
+    result_from_lzma_ret(ret, ())
+}
+
+/// Set Stream Padding for the last Stream in an index.
+pub(crate) fn lzma_index_stream_padding(index: &mut Index, padding: u64) -> Result<()> {
+    // SAFETY: `index` is valid. `padding` is validated by liblzma.
+    let ret = unsafe { liblzma_sys::lzma_index_stream_padding(index.as_mut_ptr(), padding) };
+    result_from_lzma_ret(ret, ())
+}
+
+/// Return the total size of a Stream represented by the index.
+pub(crate) fn lzma_index_stream_size(index: &Index) -> u64 {
+    // SAFETY: The index pointer is valid and owned by the caller.
+    unsafe { liblzma_sys::lzma_index_stream_size(index.as_ptr()) }
+}
+
+/// Concatenate two indexes.
+pub(crate) fn lzma_index_cat(
+    dest: &mut Index,
+    src: &mut Index,
+    allocator: Option<&crate::stream::LzmaAllocator>,
+) -> Result<()> {
+    let allocator_ptr = allocator.map_or(std::ptr::null(), crate::stream::LzmaAllocator::as_ptr);
+    // SAFETY:
+    // - `dest.as_mut_ptr()` and `src.as_mut_ptr()` are valid pointers to `lzma_index`
+    //   instances for the duration of the call.
+    // - `allocator_ptr` is either NULL (use malloc/free) or points to a valid allocator
+    //   vtable. It must be compatible with how `src` was allocated.
+    //
+    // Note: On success, liblzma frees/moves the contents of `src` into `dest`, and any
+    // iterators to `src` become invalid.
+    let ret =
+        unsafe { liblzma_sys::lzma_index_cat(dest.as_mut_ptr(), src.as_mut_ptr(), allocator_ptr) };
+    result_from_lzma_ret(ret, ())
 }
 
 /// Estimate decoder memory usage for a given compression preset.

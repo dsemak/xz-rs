@@ -19,7 +19,7 @@ fn main() -> std::io::Result<()> {
     let config = opts.config();
 
     if let Err(err) = run_cli(opts.files(), &config, PROGRAM_NAME) {
-        if let Some(msg) = format_error_for_stderr(PROGRAM_NAME, config.quiet, &err) {
+        if let Some(msg) = format_error_for_stderr(config.quiet, &err) {
             eprintln!("{msg}");
         }
 

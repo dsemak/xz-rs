@@ -9,7 +9,7 @@ mod opts;
 
 use opts::XzOpts;
 
-use xz_cli::argfiles;
+use xz_cli::{argfiles, CliError, Error, InvocationError, Result};
 use xz_cli::{format_error_for_stderr, run_cli};
 
 const PROGRAM_NAME: &str = "xz";
@@ -33,7 +33,8 @@ fn main() -> std::io::Result<()> {
     let files = match resolve_input_files(&opts) {
         Ok(files) => files,
         Err(err) => {
-            if let Some(msg) = format_error_for_stderr(PROGRAM_NAME, config.quiet, &err) {
+            let err = InvocationError::new(err, PROGRAM_NAME, None);
+            if let Some(msg) = format_error_for_stderr(config.quiet, &err) {
                 eprintln!("{msg}");
             }
             process::exit(1);
@@ -41,7 +42,7 @@ fn main() -> std::io::Result<()> {
     };
 
     if let Err(err) = run_cli(&files, &config, PROGRAM_NAME) {
-        if let Some(msg) = format_error_for_stderr(PROGRAM_NAME, config.quiet, &err) {
+        if let Some(msg) = format_error_for_stderr(config.quiet, &err) {
             eprintln!("{msg}");
         }
         process::exit(1);
@@ -50,16 +51,28 @@ fn main() -> std::io::Result<()> {
     Ok(())
 }
 
-fn resolve_input_files(opts: &XzOpts) -> std::io::Result<Vec<String>> {
+fn resolve_input_files(opts: &XzOpts) -> Result<Vec<String>> {
     let mut files = opts.files.clone();
 
     if let Some(path) = opts.files_from_file.as_deref() {
-        let extra = argfiles::read_files(Some(path), argfiles::Delimiter::Line)?;
+        let extra =
+            argfiles::read_files(Some(path), argfiles::Delimiter::Line).map_err(|source| {
+                CliError::Error(Error::OpenInput {
+                    path: path.to_string(),
+                    source,
+                })
+            })?;
         files.extend(extra);
     }
 
     if let Some(path) = opts.files0_from_file.as_deref() {
-        let extra = argfiles::read_files(Some(path), argfiles::Delimiter::Nul)?;
+        let extra =
+            argfiles::read_files(Some(path), argfiles::Delimiter::Nul).map_err(|source| {
+                CliError::Error(Error::OpenInput {
+                    path: path.to_string(),
+                    source,
+                })
+            })?;
         files.extend(extra);
     }
 

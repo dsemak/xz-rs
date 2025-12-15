@@ -5,10 +5,11 @@ use std::path::PathBuf;
 
 use crate::config::{CliConfig, OperationMode};
 use crate::error::{CliError, Error, InvocationError, Result};
+use crate::format::list::{print_list_totals, ListOutputContext, ListSummary};
 use crate::io::{
     generate_output_filename, open_input, open_output, open_output_file, SparseFileWriter,
 };
-use crate::operations::{compress_file, decompress_file, list_file};
+use crate::operations::{compress_file, decompress_file, list_file, list_file_with_context};
 
 /// Removes the input file after successful processing.
 ///
@@ -176,7 +177,7 @@ pub fn process_file(input_path: &str, config: &CliConfig) -> Result<()> {
 /// - The numeric part cannot be parsed as a valid [`u64`]
 /// - The suffix is not one of K, M, G, or a digit
 /// - The result would overflow [`u64`] after applying the multiplier
-pub fn parse_memory_limit(s: &str) -> std::result::Result<u64, CliError> {
+pub fn parse_memory_limit(s: &str) -> Result<u64> {
     const KB: u64 = 1024;
     const MB: u64 = KB * 1024;
     const GB: u64 = MB * 1024;
@@ -217,6 +218,85 @@ pub fn parse_memory_limit(s: &str) -> std::result::Result<u64, CliError> {
     })
 }
 
+/// Processes multiple files in list mode, accumulating totals and handling multi-file output.
+///
+/// # Parameters
+///
+/// * `files` - Slice of input file paths to list
+/// * `config` - CLI configuration
+/// * `program` - Program name for error messages
+///
+/// # Returns
+///
+/// Returns `Ok(())` on success, or an error if any file operation fails.
+/// Gracefully handles `BrokenPipe` errors by returning `Ok(())`.
+fn process_list_files(
+    files: &[String],
+    config: &CliConfig,
+    program: &str,
+) -> std::result::Result<(), InvocationError> {
+    let total = files.len();
+    let mut header_printed = false;
+    let mut totals = ListSummary::default();
+
+    for (idx, file) in files.iter().enumerate() {
+        let ctx = ListOutputContext {
+            file_index: idx + 1,
+            file_count: total,
+            print_header: !config.robot && !config.verbose && !header_printed,
+        };
+        header_printed |= ctx.print_header;
+
+        match list_file_with_context(file, config, ctx) {
+            Ok(summary) => {
+                totals.stream_count += summary.stream_count;
+                totals.block_count += summary.block_count;
+                totals.compressed += summary.compressed;
+                totals.uncompressed += summary.uncompressed;
+                totals.checks_mask |= summary.checks_mask;
+            }
+            Err(err) => {
+                // Handle broken pipe gracefully (e.g., when piping to `head`)
+                if let Some(crate::error::Error::WriteOutput { source }) = err.as_error() {
+                    if source.kind() == io::ErrorKind::BrokenPipe {
+                        return Ok(());
+                    }
+                }
+                return Err(InvocationError::new(err, program, Some(file)));
+            }
+        }
+    }
+
+    // Print summary line for multiple files (non-verbose, non-robot mode)
+    if total > 1 && !config.robot && !config.verbose {
+        print_list_totals(totals, total).map_err(|err| InvocationError::new(err, program, None))?;
+    }
+
+    Ok(())
+}
+
+/// Processes multiple files sequentially in non-list modes.
+///
+/// # Parameters
+///
+/// * `files` - Slice of input file paths to process
+/// * `config` - CLI configuration
+/// * `program` - Program name for error messages
+///
+/// # Returns
+///
+/// Returns `Ok(())` if all files were processed successfully.
+fn process_files(
+    files: &[String],
+    config: &CliConfig,
+    program: &str,
+) -> std::result::Result<(), InvocationError> {
+    for file in files {
+        process_file(file, config).map_err(|err| InvocationError::new(err, program, Some(file)))?;
+    }
+    Ok(())
+}
+
 /// Runs a CLI command over multiple input files with error context.
 ///
 /// This is a convenience wrapper around [`process_file`] that processes multiple
@@ -237,26 +317,18 @@ pub fn parse_memory_limit(s: &str) -> std::result::Result<u64, CliError> {
 ///
 /// Returns an error if any file operation fails. The error message includes
 /// the program name and file path for better error reporting. Processing stops
-/// at the first error
-pub fn run_cli(files: &[String], config: &CliConfig, program: &str) -> io::Result<()> {
+/// at the first error.
+pub fn run_cli(
+    files: &[String],
+    config: &CliConfig,
+    program: &str,
+) -> std::result::Result<(), InvocationError> {
     if files.is_empty() {
-        process_file("", config).map_err(|err| {
-            io::Error::other(InvocationError {
-                program: program.to_string(),
-                file: None,
-                source: err,
-            })
-        })?;
+        process_file("", config).map_err(|err| InvocationError::new(err, program, None))?;
+    } else if config.mode == OperationMode::List {
+        process_list_files(files, config, program)?;
     } else {
-        for file in files {
-            process_file(file, config).map_err(|err| {
-                io::Error::other(InvocationError {
-                    program: program.to_string(),
-                    file: Some(file.to_string()),
-                    source: err,
-                })
-            })?;
-        }
+        process_files(files, config, program)?;
     }
 
     Ok(())

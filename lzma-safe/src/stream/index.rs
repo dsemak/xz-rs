@@ -1,11 +1,13 @@
 //! Safe RAII wrappers around `lzma_index` and iterators over its contents.
 
 use std::marker::PhantomData;
+use std::mem::ManuallyDrop;
 use std::ptr::NonNull;
 
 use crate::encoder::options::IntegrityCheck;
 use crate::ffi;
 use crate::stream::LzmaAllocator;
+use crate::{Error, Result};
 
 /// Owned handle to a liblzma `lzma_index`.
 ///
@@ -40,6 +42,11 @@ impl Index {
         self.inner.as_ptr()
     }
 
+    /// Expose the raw pointer for FFI calls that need mutable access.
+    pub(crate) fn as_mut_ptr(&mut self) -> *mut liblzma_sys::lzma_index {
+        self.inner.as_ptr()
+    }
+
     /// Return the number of streams stored in the index.
     pub fn stream_count(&self) -> u64 {
         ffi::lzma_index_stream_count(self)
@@ -60,9 +67,64 @@ impl Index {
         ffi::lzma_index_uncompressed_size(self)
     }
 
+    /// Return the total size of the Stream represented by this index.
+    pub fn stream_size(&self) -> u64 {
+        ffi::lzma_index_stream_size(self)
+    }
+
     /// Return the bitmask of integrity checks seen in the index.
     pub fn checks(&self) -> u32 {
         ffi::lzma_index_checks(self)
+    }
+
+    /// Decode an XZ Index field (as stored in the Stream) into an [`Index`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the Index field is corrupted, truncated, or if
+    /// decoding exceeds `memlimit`.
+    pub fn decode_xz_index_field(index_field: &[u8], memlimit: u64) -> Result<Self> {
+        let mut limit = memlimit;
+        let (index, consumed) = ffi::decode_xz_index_field(&mut limit, index_field, None)?;
+        if consumed != index_field.len() {
+            // The caller should provide exactly the Index field bytes.
+            return Err(Error::DataError);
+        }
+        Ok(index)
+    }
+
+    /// Set Stream Flags for the last (and typically the only) Stream in this index.
+    ///
+    /// This is needed for functions like `checks()` to report meaningful values and for
+    /// downstream code that needs to know the integrity check type.
+    pub fn set_stream_flags_from_footer(
+        &mut self,
+        footer: &[u8; crate::stream::HEADER_SIZE],
+    ) -> Result<()> {
+        let flags = StreamFlags::decode_footer(footer)?;
+        ffi::lzma_index_stream_flags(self, &flags)
+    }
+
+    /// Set Stream Padding for the last Stream in this index.
+    pub fn set_stream_padding(&mut self, padding: u64) -> Result<()> {
+        ffi::lzma_index_stream_padding(self, padding)
+    }
+
+    /// Append `other` after `self`, concatenating Stream information.
+    ///
+    /// On success, `other` is consumed and must not be used again.
+    pub fn append(&mut self, other: Index) -> Result<()> {
+        // Take a local clone to avoid borrowing `self` immutably while it is mutably borrowed.
+        let allocator = self.allocator.clone();
+        let mut other = ManuallyDrop::new(other);
+        match ffi::lzma_index_cat(self, &mut other, allocator.as_ref()) {
+            Ok(()) => Ok(()),
+            Err(err) => {
+                // SAFETY: Concatenation failed, `other` still owns its resources.
+                unsafe { ManuallyDrop::drop(&mut other) };
+                Err(err)
+            }
+        }
     }
 
     /// Create an iterator over items stored in the index.
@@ -273,6 +335,40 @@ impl StreamFlags {
             backward_size,
             check,
         })
+    }
+
+    /// Convert this value into a raw `liblzma_sys::lzma_stream_flags`.
+    ///
+    /// When `backward_size` is `None`, the returned struct will have `backward_size`
+    /// set to `LZMA_VLI_UNKNOWN` (represented as `u64::MAX`).
+    pub(crate) fn to_raw(self) -> liblzma_sys::lzma_stream_flags {
+        // backward_size is set to LZMA_VLI_UNKNOWN when not available (e.g., from Stream Header).
+        const LZMA_VLI_UNKNOWN: u64 = u64::MAX;
+
+        // SAFETY: `lzma_stream_flags` is a plain C struct; all-zero initialization is valid.
+        let mut raw: liblzma_sys::lzma_stream_flags = unsafe { std::mem::zeroed() };
+        raw.version = self.version;
+        raw.backward_size = self.backward_size.unwrap_or(LZMA_VLI_UNKNOWN);
+        raw.check = self.check.into();
+        raw
+    }
+
+    /// Decode an XZ Stream Header.
+    pub fn decode_header(input: &[u8; crate::stream::HEADER_SIZE]) -> Result<Self> {
+        ffi::decode_stream_header_flags(input)
+    }
+
+    /// Decode an XZ Stream Footer.
+    pub fn decode_footer(input: &[u8; crate::stream::HEADER_SIZE]) -> Result<Self> {
+        ffi::decode_stream_footer_flags(input)
+    }
+
+    /// Decode and compare Stream Header and Stream Footer flags.
+    pub fn compare_header_footer(
+        header: &[u8; crate::stream::HEADER_SIZE],
+        footer: &[u8; crate::stream::HEADER_SIZE],
+    ) -> Result<()> {
+        ffi::compare_stream_header_footer(header, footer)
     }
 }
 

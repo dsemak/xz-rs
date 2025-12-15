@@ -76,8 +76,18 @@ impl FileInfoDecoder {
             return Err(crate::Error::ProgError);
         };
 
+        // IMPORTANT: Unlike the regular stream decoder, the file info decoder may be used in
+        // workflows that involve seeking in the underlying file. In such cases, callers must
+        // be able to clear the input window (next_in = NULL, avail_in = 0). That is exposed
+        // via `clear_input()`. Here we only update the input pointer when the caller supplies
+        // a non-empty slice to avoid interfering with any buffered bytes.
+        //
+        // However, when finishing and there are no buffered bytes left, explicitly clear the
+        // input pointer (next_in = NULL). Some liblzma paths rely on next_in being NULL at EOF.
         if !input.is_empty() {
             stream.set_next_input(input);
+        } else if action == Action::Finish && stream.avail_in() == 0 {
+            stream.set_next_input(&[]);
         }
 
         let input_before = stream.avail_in();
@@ -147,6 +157,17 @@ impl FileInfoDecoder {
     /// and provide data starting from this position.
     pub fn seek_pos(&self) -> u64 {
         self.stream.as_ref().map_or(0, Stream::seek_pos)
+    }
+
+    /// Clears the current input window (sets `next_in = NULL` and `avail_in = 0`).
+    ///
+    /// This is primarily useful after [`Error::SeekNeeded`] is returned from [`process`](Self::process)
+    /// and the caller has repositioned the underlying input (e.g. via `Seek`). Clearing the old
+    /// input window ensures that liblzma won't attempt to continue using stale pointers.
+    pub fn clear_input(&mut self) {
+        if let Some(stream) = self.stream.as_mut() {
+            stream.set_next_input(&[]);
+        }
     }
 
     /// Returns whether the decoding has finished and the index is available.

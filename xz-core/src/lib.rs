@@ -165,14 +165,7 @@ pub use buffer::{Allocator, Buffer, Deallocator, DeallocatorFn, GlobalAllocator}
 /// The ratio as a percentage (0.0-100.0+), or 0.0 if denominator is zero.
 pub fn ratio(numerator: u64, denominator: u64) -> f64 {
     if denominator > 0 {
-        // Use integer division and remainder to avoid direct u64 -> f64 cast
-        let quotient = numerator / denominator;
-        let remainder = numerator % denominator;
-
-        f64::from(u32::try_from(quotient).unwrap_or(u32::MAX)) * 100.0
-            + (f64::from(u32::try_from(remainder).unwrap_or(u32::MAX))
-                / f64::from(u32::try_from(denominator).unwrap_or(u32::MAX)))
-                * 100.0
+        (numerator as f64 / denominator as f64) * 100.0
     } else {
         0.0
     }

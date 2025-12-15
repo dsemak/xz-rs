@@ -12,6 +12,7 @@ use xz_core::{
 
 use crate::config::CliConfig;
 use crate::error::{CliError, Error, Result};
+use crate::format::list::{self, ListOutputContext, ListSummary};
 
 /// Compresses data from an input reader to an output writer.
 ///
@@ -219,6 +220,40 @@ pub fn decompress_file(
 /// - The file is not a valid XZ file
 /// - Memory limit is exceeded during analysis
 pub fn list_file(input_path: &str, config: &CliConfig) -> Result<()> {
+    let ctx = ListOutputContext {
+        file_index: 1,
+        file_count: 1,
+        print_header: !config.robot && !config.verbose,
+    };
+    let _ = list_file_with_context(input_path, config, ctx)?;
+    Ok(())
+}
+
+/// Lists information about an XZ compressed file with context for multi-file processing.
+///
+/// # Parameters
+///
+/// * `input_path` - Path to the input XZ file
+/// * `config` - CLI configuration specifying verbosity and output format
+/// * `ctx` - Output context for multi-file formatting (file index, count, header printing)
+///
+/// # Returns
+///
+/// Returns `Ok(ListSummary)` with file metadata if the file was successfully analyzed.
+///
+/// # Errors
+///
+/// Returns an error if:
+///
+/// - The file cannot be opened or read
+/// - The file is not a valid XZ file
+/// - Memory limit is exceeded during analysis
+/// - Writing to stdout fails (e.g., broken pipe)
+pub(crate) fn list_file_with_context(
+    input_path: &str,
+    config: &CliConfig,
+    ctx: ListOutputContext,
+) -> Result<ListSummary> {
     // Open the file
     let mut file = File::open(input_path).map_err(|source| {
         CliError::from(Error::OpenInput {
@@ -236,9 +271,21 @@ pub fn list_file(input_path: &str, config: &CliConfig) -> Result<()> {
         })
     })?;
 
+    let summary = ListSummary {
+        stream_count: info.stream_count(),
+        block_count: info.block_count(),
+        compressed: info.file_size(),
+        uncompressed: info.uncompressed_size(),
+        checks_mask: info.checks(),
+    };
+
     if config.robot {
+        use std::io::Write;
+
         // Machine-readable output
-        println!(
+        let mut out = io::stdout().lock();
+        writeln!(
+            out,
             "{}\t{}\t{}\t{}\t{:.3}\t{}",
             input_path,
             info.stream_count(),
@@ -246,59 +293,17 @@ pub fn list_file(input_path: &str, config: &CliConfig) -> Result<()> {
             info.file_size(),
             info.uncompressed_size(),
             ratio(info.file_size(), info.uncompressed_size())
-        );
+        )
+        .map_err(|source| CliError::from(Error::WriteOutput { source }))?;
     } else if config.verbose {
-        // Detailed human-readable output
-        println!("File: {}", input_path);
-        println!("  Streams:           {}", info.stream_count());
-        println!("  Blocks:            {}", info.block_count());
-        println!("  Compressed size:   {} bytes", info.file_size());
-        println!("  Uncompressed size: {} bytes", info.uncompressed_size());
-        println!(
-            "  Ratio:             {:.2}%",
-            ratio(info.file_size(), info.uncompressed_size())
-        );
-        println!("  Check:             0x{:08x}", info.checks());
-
-        // Show detailed stream info
-        for (idx, stream) in info.streams().iter().enumerate() {
-            println!("\n  Stream {}:", idx + 1);
-            println!("    Blocks:          {}", stream.block_count);
-            println!("    Compressed:      {} bytes", stream.compressed_size);
-            println!("    Uncompressed:    {} bytes", stream.uncompressed_size);
-            println!(
-                "    Ratio:           {:.2}%",
-                ratio(stream.compressed_size, stream.uncompressed_size)
-            );
-            println!("    Padding:         {} bytes", stream.padding);
-        }
-
-        // Show detailed block info
-        println!("\n  Blocks:");
-        for block in info.blocks() {
-            println!(
-                "    Block {} (in stream {}):",
-                block.number_in_file, block.number_in_stream
-            );
-            println!("      Compressed:    {} bytes", block.total_size);
-            println!("      Uncompressed:  {} bytes", block.uncompressed_size);
-            println!(
-                "      Ratio:         {:.2}%",
-                ratio(block.total_size, block.uncompressed_size) * 100.0
-            );
-        }
+        let streams = info.streams();
+        let mut blocks = info.blocks();
+        blocks.sort_by_key(|b| b.number_in_file);
+        list::write_verbose_report(input_path, ctx, summary, &streams, &blocks)?;
     } else {
-        // Compact output
-        println!(
-            "{}: {} streams, {} blocks, {}/{} bytes, {:.1}%",
-            input_path,
-            info.stream_count(),
-            info.block_count(),
-            info.file_size(),
-            info.uncompressed_size(),
-            ratio(info.file_size(), info.uncompressed_size())
-        );
+        list::write_list_header_if_needed(ctx)?;
+        list::write_list_row(summary, input_path)?;
     }
 
-    Ok(())
+    Ok(summary)
 }

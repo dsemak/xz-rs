@@ -19,6 +19,28 @@ pub struct InvocationError {
     pub source: CliError,
 }
 
+impl InvocationError {
+    /// Creates a new `InvocationError` by wrapping a CLI error with program and file context.
+    ///
+    /// # Parameters
+    ///
+    /// * `err` - The underlying CLI error to wrap
+    /// * `program` - Program name to include in error messages (e.g., "xz", "unxz", "xzcat")
+    /// * `file` - Optional file path associated with the error. Use `None` for stdin or
+    ///   when no specific file is associated with the error.
+    ///
+    /// # Returns
+    ///
+    /// Returns a new `InvocationError` instance with the provided context.
+    pub fn new(err: CliError, program: &str, file: Option<&str>) -> Self {
+        Self {
+            program: program.to_string(),
+            file: file.map(String::from),
+            source: err,
+        }
+    }
+}
+
 impl std::fmt::Display for InvocationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.file.as_deref() {
@@ -38,7 +60,6 @@ impl std::error::Error for InvocationError {
 ///
 /// # Parameters
 ///
-/// - `program`: Program name prefix to use in error output (e.g. `"xz"`).
 /// - `quiet`: Quiet level (as counted by `-q` occurrences).
 /// - `err`: The I/O error returned by the CLI runner.
 ///
@@ -46,24 +67,12 @@ impl std::error::Error for InvocationError {
 ///
 /// Returns `None` when the message should be suppressed by `quiet`,
 /// otherwise returns a formatted single-line message suitable for stderr.
-pub fn format_error_for_stderr(program: &str, quiet: u8, err: &io::Error) -> Option<String> {
-    if quiet >= 2 {
+pub fn format_error_for_stderr(quiet: u8, err: &InvocationError) -> Option<String> {
+    if quiet >= 2 || quiet >= 1 && err.source.as_warning().is_some() {
         return None;
     }
 
-    let run_err = err
-        .get_ref()
-        .and_then(|e| e.downcast_ref::<InvocationError>());
-
-    if quiet >= 1 && run_err.is_some_and(|e| e.source.as_warning().is_some()) {
-        return None;
-    }
-
-    if let Some(run_err) = run_err {
-        return Some(run_err.to_string());
-    }
-
-    Some(format!("{program}: {err}"))
+    Some(err.to_string())
 }
 
 /// Warning conditions for XZ CLI operations.
@@ -173,12 +182,20 @@ pub enum Error {
     InvalidMemoryLimit(String),
 
     /// Failed to extract file information
-    #[error("{path}: File format not recognized")]
+    #[error("File format not recognized ({message})")]
     FileInfoExtraction {
         /// Path to the file
         path: String,
         /// Error message
         message: String,
+    },
+
+    /// Failed to write to stdout/stderr.
+    #[error("{source}")]
+    WriteOutput {
+        /// Underlying I/O error.
+        #[source]
+        source: io::Error,
     },
 }
 
@@ -232,7 +249,8 @@ impl From<CliError> for io::Error {
                 }
                 Error::OpenInput { source, .. }
                 | Error::CreateOutput { source, .. }
-                | Error::RemoveFile { source, .. } => {
+                | Error::RemoveFile { source, .. }
+                | Error::WriteOutput { source } => {
                     // Preserve the original error kind
                     io::Error::new(source.kind(), err)
                 }
