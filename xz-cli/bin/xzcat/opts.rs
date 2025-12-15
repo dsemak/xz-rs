@@ -34,7 +34,13 @@ pub struct XzCatOpts {
     threads: Option<usize>,
 
     /// Memory usage limit for decompression
-    #[arg(short = 'M', long = "memory", value_name = "LIMIT", value_parser = parse_memory_limit)]
+    #[arg(
+        short = 'M',
+        long = "memory",
+        alias = "memlimit",
+        value_name = "LIMIT",
+        value_parser = parse_memory_limit
+    )]
     memory: Option<u64>,
 }
 
@@ -63,7 +69,6 @@ impl XzCatOpts {
             suffix: None,
             single_stream: false,
             ignore_check: false,
-            // Always writes to stdout; sparse output is not applicable.
             sparse: false,
         }
     }
@@ -106,5 +111,16 @@ mod tests {
         assert!(opts.verbose);
         assert_eq!(opts.threads, Some(2));
         assert_eq!(opts.memory, Some(512 * 1024));
+    }
+
+    #[test]
+    fn parse_accepts_memlimit_alias() {
+        let opts = match XzCatOpts::try_parse_from(["xzcat", "--memlimit", "1M", "input.xz"]) {
+            Ok(v) => v,
+            Err(e) => panic!("failed to parse aliases: {e}"),
+        };
+
+        assert_eq!(opts.files(), ["input.xz"]);
+        assert_eq!(opts.memory, Some(1024 * 1024));
     }
 }

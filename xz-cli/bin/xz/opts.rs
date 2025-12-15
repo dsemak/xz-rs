@@ -28,7 +28,12 @@ pub struct XzOpts {
     pub compress: bool,
 
     /// Force decompression
-    #[arg(short = 'd', long = "decompress", conflicts_with_all = ["compress", "test", "list"])]
+    #[arg(
+        short = 'd',
+        long = "decompress",
+        alias = "uncompress",
+        conflicts_with_all = ["compress", "test", "list"]
+    )]
     pub decompress: bool,
 
     /// Test compressed file integrity
@@ -40,7 +45,7 @@ pub struct XzOpts {
     pub list: bool,
 
     /// Write to standard output and don't delete input files
-    #[arg(short = 'c', long = "stdout")]
+    #[arg(short = 'c', long = "stdout", alias = "to-stdout")]
     pub stdout: bool,
 
     /// Force overwrite of output file
@@ -104,7 +109,13 @@ pub struct XzOpts {
     pub threads: Option<usize>,
 
     /// Memory usage limit for decompression
-    #[arg(short = 'M', long = "memory", value_name = "LIMIT", value_parser = parse_memory_limit)]
+    #[arg(
+        short = 'M',
+        long = "memory",
+        alias = "memlimit",
+        value_name = "LIMIT",
+        value_parser = parse_memory_limit
+    )]
     pub memory: Option<u64>,
 
     /// Use extreme compression (slower but better compression)
@@ -340,5 +351,25 @@ mod tests {
 
         opts.level_9 = true;
         assert_eq!(opts.compression_level(), Some(9));
+    }
+
+    #[test]
+    fn parse_accepts_aliases() {
+        let opts = match XzOpts::try_parse_from([
+            "xz",
+            "--uncompress",
+            "--to-stdout",
+            "--memlimit",
+            "1M",
+            "file.xz",
+        ]) {
+            Ok(v) => v,
+            Err(e) => panic!("failed to parse aliases: {e}"),
+        };
+
+        assert!(opts.decompress);
+        assert!(opts.stdout);
+        assert_eq!(opts.memory, Some(1024 * 1024));
+        assert_eq!(opts.files, ["file.xz"]);
     }
 }

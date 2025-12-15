@@ -22,7 +22,7 @@ pub struct UnxzOpts {
     files: Vec<String>,
 
     /// Write to standard output and don't delete input files
-    #[arg(short = 'c', long = "stdout")]
+    #[arg(short = 'c', long = "stdout", alias = "to-stdout")]
     stdout: bool,
 
     /// Force overwrite of output file
@@ -50,7 +50,13 @@ pub struct UnxzOpts {
     threads: Option<usize>,
 
     /// Memory usage limit for decompression
-    #[arg(short = 'M', long = "memory", value_name = "LIMIT", value_parser = parse_memory_limit)]
+    #[arg(
+        short = 'M',
+        long = "memory",
+        alias = "memlimit",
+        value_name = "LIMIT",
+        value_parser = parse_memory_limit
+    )]
     memory: Option<u64>,
 
     /// Don't create sparse files when decompressing.
@@ -141,5 +147,23 @@ mod tests {
         assert!(opts.verbose);
         assert_eq!(opts.threads, Some(4));
         assert_eq!(opts.memory, Some(1024 * 1024));
+    }
+
+    #[test]
+    fn parse_accepts_aliases() {
+        let opts = match UnxzOpts::try_parse_from([
+            "unxz",
+            "--to-stdout",
+            "--memlimit",
+            "512K",
+            "file.xz",
+        ]) {
+            Ok(v) => v,
+            Err(e) => panic!("failed to parse aliases: {e}"),
+        };
+
+        assert!(opts.stdout);
+        assert_eq!(opts.memory, Some(512 * 1024));
+        assert_eq!(opts.files(), ["file.xz"]);
     }
 }

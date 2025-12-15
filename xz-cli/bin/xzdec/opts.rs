@@ -36,7 +36,13 @@ pub struct XzDecOpts {
     _stdout: bool,
 
     /// Memory usage limit for decompression
-    #[arg(short = 'M', long = "memory", value_name = "LIMIT", value_parser = parse_memory_limit)]
+    #[arg(
+        short = 'M',
+        long = "memory",
+        alias = "memlimit",
+        value_name = "LIMIT",
+        value_parser = parse_memory_limit
+    )]
     memory: Option<u64>,
 
     /// Suppress errors when specified twice
@@ -147,5 +153,25 @@ mod tests {
         assert!(opts._keep);
         assert!(opts._stdout);
         assert!(opts._no_warn);
+    }
+
+    #[test]
+    fn parse_accepts_aliases() {
+        let opts = match XzDecOpts::try_parse_from([
+            "xzdec",
+            "--uncompress",
+            "--to-stdout",
+            "--memlimit",
+            "512K",
+            "input.xz",
+        ]) {
+            Ok(v) => v,
+            Err(e) => panic!("failed to parse aliases: {e}"),
+        };
+
+        assert_eq!(opts.files(), ["input.xz"]);
+        assert!(opts._decompress);
+        assert!(opts._stdout);
+        assert_eq!(opts.memory, Some(512 * 1024));
     }
 }
