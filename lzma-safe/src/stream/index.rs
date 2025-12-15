@@ -39,7 +39,7 @@ impl Index {
 
     /// Expose the raw pointer for FFI calls that only need shared access.
     pub(crate) fn as_ptr(&self) -> *const liblzma_sys::lzma_index {
-        self.inner.as_ptr()
+        self.inner.as_ptr().cast_const()
     }
 
     /// Expose the raw pointer for FFI calls that need mutable access.
