@@ -254,7 +254,10 @@ pub(crate) fn list_file_with_context(
     config: &CliConfig,
     ctx: ListOutputContext,
 ) -> Result<ListSummary> {
-    // Open the file
+    if input_path.is_empty() || input_path == "-" {
+        return Err(CliError::from(Error::ListModeStdinUnsupported));
+    }
+
     let mut file = File::open(input_path).map_err(|source| {
         CliError::from(Error::OpenInput {
             path: input_path.to_string(),

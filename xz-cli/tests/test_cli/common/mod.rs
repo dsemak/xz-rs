@@ -337,7 +337,7 @@ impl Fixture {
         &mut self,
         binary_type: &BinaryType,
         args: &[&str],
-        args_to_stdin: Option<Vec<&str>>,
+        stdin_bytes: Option<Vec<u8>>,
         kill_receiver: oneshot::Receiver<()>,
     ) -> Output {
         let bin_path = binary_type.get_path();
@@ -350,16 +350,12 @@ impl Fixture {
             .spawn()
             .unwrap();
 
-        if let Some(stdin_args) = args_to_stdin {
+        if let Some(stdin_bytes) = stdin_bytes {
             if let Some(ref mut stdin) = child.stdin {
-                let mut converted_args = vec![];
-                for arg in stdin_args {
-                    converted_args.extend_from_slice(arg.as_bytes());
-                }
                 stdin
-                    .write_all(&converted_args)
+                    .write_all(&stdin_bytes)
                     .await
-                    .unwrap_or_else(|_| panic!("failed write to stdin {converted_args:?}"));
+                    .unwrap_or_else(|_| panic!("failed write to stdin ({} bytes)", stdin_bytes.len()));
             }
         }
 
@@ -404,9 +400,32 @@ impl Fixture {
         args: &[&str],
         args_to_stdin: Option<Vec<&str>>,
     ) -> Output {
+        let stdin_bytes = args_to_stdin.map(|stdin_args| {
+            let mut converted_args = Vec::new();
+            for arg in stdin_args {
+                converted_args.extend_from_slice(arg.as_bytes());
+            }
+            converted_args
+        });
+
         let (kill_sender, kill_receiver) = oneshot::channel();
         let output = self
-            .run_until_killed(&binary_type, args, args_to_stdin, kill_receiver)
+            .run_until_killed(&binary_type, args, stdin_bytes, kill_receiver)
+            .await;
+        drop(kill_sender);
+        output
+    }
+
+    /// Run a binary with raw stdin bytes.
+    pub async fn run_with_stdin_raw(
+        &mut self,
+        binary_type: BinaryType,
+        args: &[&str],
+        stdin: &[u8],
+    ) -> Output {
+        let (kill_sender, kill_receiver) = oneshot::channel();
+        let output = self
+            .run_until_killed(&binary_type, args, Some(stdin.to_vec()), kill_receiver)
             .await;
         drop(kill_sender);
         output

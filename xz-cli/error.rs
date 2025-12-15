@@ -190,6 +190,10 @@ pub enum Error {
         message: String,
     },
 
+    /// List mode does not support reading from stdin.
+    #[error("--list does not support reading from standard input")]
+    ListModeStdinUnsupported,
+
     /// Failed to write to stdout/stderr.
     #[error("{source}")]
     WriteOutput {
@@ -241,7 +245,10 @@ impl From<CliError> for io::Error {
                 Error::InvalidOutputFilename { .. }
                 | Error::InvalidCompressionLevel { .. }
                 | Error::InvalidThreadCount { .. }
-                | Error::InvalidMemoryLimit(_) => io::Error::new(io::ErrorKind::InvalidInput, err),
+                | Error::InvalidMemoryLimit(_)
+                | Error::ListModeStdinUnsupported => {
+                    io::Error::new(io::ErrorKind::InvalidInput, err)
+                }
                 Error::Compression { .. }
                 | Error::Decompression { .. }
                 | Error::FileInfoExtraction { .. } => {

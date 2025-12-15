@@ -1,5 +1,10 @@
+use std::io::Cursor;
+
+use xz_core::options::DecompressionOptions;
+use xz_core::pipeline::decompress;
+
 use crate::add_test;
-use crate::common::{generate_random_data, Fixture};
+use crate::common::{generate_random_data, BinaryType, Fixture};
 use crate::MB;
 
 // Test empty file handling
@@ -202,4 +207,71 @@ add_test!(non_existent_file, async {
 
     let output = fixture.run_cargo("xz", &["-d", &non_existent]).await;
     assert!(!output.status.success());
+});
+
+// Test `-` as stdin in the middle of the file list.
+add_test!(dash_reads_stdin_in_middle, async {
+    const FILE_1: &str = "file1.txt";
+    const FILE_2: &str = "file2.txt";
+    const STDIN_DATA: &str = "stdin data";
+
+    let data_1 = b"file1 data";
+    let data_2 = b"file2 data";
+    let stdin_data = STDIN_DATA.as_bytes();
+
+    let mut fixture = Fixture::with_files(&[FILE_1, FILE_2], &[data_1, data_2]);
+
+    let path_1 = fixture.path(FILE_1);
+    let path_2 = fixture.path(FILE_2);
+
+    // `xz file - file2` should read stdin at '-' and write its output to stdout,
+    // while still processing the surrounding files normally.
+    let output = fixture
+        .run_with_stdin(
+            BinaryType::cargo("xz"),
+            &["-k", &path_1, "-", &path_2],
+            Some(vec![STDIN_DATA]),
+        )
+        .await;
+    assert!(output.status.success());
+
+    // Stdin chunk was compressed to stdout.
+    let mut decoded = Vec::new();
+    let mut reader = Cursor::new(output.stdout_raw);
+    let res = decompress(&mut reader, &mut decoded, &DecompressionOptions::default());
+    assert!(res.is_ok());
+    assert!(decoded == stdin_data);
+
+    // File inputs were still compressed to their respective output files.
+    assert!(fixture.file_exists(&format!("{FILE_1}.xz")));
+    assert!(fixture.file_exists(&format!("{FILE_2}.xz")));
+
+    // Originals are kept due to `-k`.
+    fixture.assert_files(&[FILE_1, FILE_2], &[data_1, data_2]);
+});
+
+// Test upstream behavior: `xz --list` does not accept stdin (`-`).
+add_test!(list_rejects_dash_stdin, async {
+    let mut fixture = Fixture::with_file("dummy.txt", b"dummy");
+
+    let output = fixture
+        .run_with_stdin(
+            BinaryType::cargo("xz"),
+            &["-l", "-"],
+            Some(vec!["irrelevant"]),
+        )
+        .await;
+    assert!(!output.status.success());
+    assert!(output.stderr.contains("not support"));
+});
+
+// Test upstream behavior: `xz --list` does not accept stdin when no files are provided.
+add_test!(list_rejects_no_files_stdin, async {
+    let mut fixture = Fixture::with_file("dummy.txt", b"dummy");
+
+    let output = fixture
+        .run_with_stdin(BinaryType::cargo("xz"), &["-l"], Some(vec!["irrelevant"]))
+        .await;
+    assert!(!output.status.success());
+    assert!(output.stderr.contains("not support"));
 });

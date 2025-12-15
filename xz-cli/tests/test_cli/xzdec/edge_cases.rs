@@ -1,5 +1,5 @@
 use crate::add_test;
-use crate::common::{generate_random_data, Fixture};
+use crate::common::{generate_random_data, BinaryType, Fixture};
 use crate::MB;
 
 // Test xzdec with corrupted file
@@ -216,4 +216,55 @@ add_test!(incompressible_data, async {
     let output = fixture.run_cargo("xzdec", &[&compressed_path]).await;
     assert!(output.status.success());
     assert!(output.stdout_raw == data);
+});
+
+// Test `-` as stdin in the middle of the file list.
+add_test!(dash_reads_stdin_in_middle, async {
+    const FILE_1: &str = "file1.txt";
+    const FILE_2: &str = "file2.txt";
+    const STDIN_FILE: &str = "stdin.txt";
+
+    let data_1 = b"file1 data";
+    let data_2 = b"file2 data";
+    let stdin_data = b"stdin data";
+
+    let mut fixture = Fixture::with_files(
+        &[FILE_1, FILE_2, STDIN_FILE],
+        &[data_1, data_2, stdin_data],
+    );
+
+    // Prepare file inputs as .xz files on disk.
+    let file_1_path = fixture.path(FILE_1);
+    let file_2_path = fixture.path(FILE_2);
+    let file_1_xz = fixture.compressed_path(FILE_1);
+    let file_2_xz = fixture.compressed_path(FILE_2);
+
+    let output = fixture.run_cargo("xz", &[&file_1_path]).await;
+    assert!(output.status.success());
+    let output = fixture.run_cargo("xz", &[&file_2_path]).await;
+    assert!(output.status.success());
+
+    // Prepare stdin as XZ-compressed bytes.
+    let stdin_path = fixture.path(STDIN_FILE);
+    let output = fixture.run_cargo("xz", &["-c", &stdin_path]).await;
+    assert!(output.status.success());
+    let stdin_compressed = output.stdout_raw;
+
+    // xzdec should accept '-' as stdin in the file list.
+    let output = fixture
+        .run_with_stdin_raw(
+            BinaryType::cargo("xzdec"),
+            &[&file_1_xz, "-", &file_2_xz],
+            &stdin_compressed,
+        )
+        .await;
+    assert!(output.status.success());
+
+    let expected: Vec<u8> = data_1
+        .iter()
+        .chain(stdin_data.iter())
+        .chain(data_2.iter())
+        .copied()
+        .collect();
+    assert!(output.stdout_raw == expected);
 });

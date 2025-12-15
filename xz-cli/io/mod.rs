@@ -149,7 +149,7 @@ pub fn generate_output_filename(
 ///
 /// # Parameters
 ///
-/// * `path` - Path to the input file, or empty string for stdin
+/// * `path` - Path to the input file, `"-"` for stdin, or empty string for stdin
 ///
 /// # Returns
 ///
@@ -162,7 +162,7 @@ pub fn generate_output_filename(
 ///
 /// Returns an error if the file cannot be opened.
 pub fn open_input(path: &str) -> Result<Box<dyn io::Read>> {
-    if path.is_empty() {
+    if path.is_empty() || path == "-" {
         Ok(Box::new(io::BufReader::with_capacity(
             DEFAULT_BUFFER_SIZE,
             io::stdin(),

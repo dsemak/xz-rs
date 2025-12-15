@@ -34,7 +34,9 @@ pub fn cleanup_input_file(input_path: &str, config: &CliConfig) -> Result<()> {
         return Ok(());
     }
 
-    if !config.keep && !input_path.is_empty() && !config.stdout {
+    let is_stdin = input_path.is_empty() || input_path == "-";
+
+    if !config.keep && !is_stdin && !config.stdout {
         std::fs::remove_file(input_path).map_err(|source| {
             CliError::from(Error::RemoveFile {
                 path: input_path.to_string(),
@@ -87,8 +89,10 @@ pub fn cleanup_input_file(input_path: &str, config: &CliConfig) -> Result<()> {
 /// - Compression/decompression operation fails
 /// - Input file removal fails (when cleanup is enabled)
 pub fn process_file(input_path: &str, config: &CliConfig) -> Result<()> {
+    let is_stdin = input_path.is_empty() || input_path == "-";
+
     // Use empty PathBuf for stdin, otherwise use the provided path
-    let input_path_buf = if input_path.is_empty() {
+    let input_path_buf = if is_stdin {
         PathBuf::new()
     } else {
         PathBuf::from(input_path)
@@ -97,18 +101,20 @@ pub fn process_file(input_path: &str, config: &CliConfig) -> Result<()> {
     let input = open_input(input_path)?;
 
     // Determine output path
-    let output_path =
-        if config.stdout || config.mode == OperationMode::Cat || config.mode == OperationMode::Test
-        {
-            None
-        } else {
-            Some(generate_output_filename(
-                &input_path_buf,
-                config.mode,
-                config.suffix.as_deref(),
-                config.force,
-            )?)
-        };
+    let output_path = if is_stdin
+        || config.stdout
+        || config.mode == OperationMode::Cat
+        || config.mode == OperationMode::Test
+    {
+        None
+    } else {
+        Some(generate_output_filename(
+            &input_path_buf,
+            config.mode,
+            config.suffix.as_deref(),
+            config.force,
+        )?)
+    };
 
     // Open output
     let output: Box<dyn io::Write> = match (
@@ -323,6 +329,14 @@ pub fn run_cli(
     config: &CliConfig,
     program: &str,
 ) -> std::result::Result<(), InvocationError> {
+    if config.mode == OperationMode::List && files.is_empty() {
+        return Err(InvocationError::new(
+            CliError::from(Error::ListModeStdinUnsupported),
+            program,
+            None,
+        ));
+    }
+
     if files.is_empty() {
         process_file("", config).map_err(|err| InvocationError::new(err, program, None))?;
     } else if config.mode == OperationMode::List {
