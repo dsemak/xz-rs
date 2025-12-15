@@ -4,7 +4,7 @@ use std::io;
 use std::path::PathBuf;
 
 use crate::config::{CliConfig, OperationMode};
-use crate::error::{CliError, Error, InvocationError, Result};
+use crate::error::{DiagnosticCause, Error, ExitStatus, Report, Result};
 use crate::format::list::{print_list_totals, ListOutputContext, ListSummary};
 use crate::io::{
     generate_output_filename, open_input, open_output, open_output_file, SparseFileWriter,
@@ -38,7 +38,7 @@ pub fn cleanup_input_file(input_path: &str, config: &CliConfig) -> Result<()> {
 
     if !config.keep && !is_stdin && !config.stdout {
         std::fs::remove_file(input_path).map_err(|source| {
-            CliError::from(Error::RemoveFile {
+            DiagnosticCause::from(Error::RemoveFile {
                 path: input_path.to_string(),
                 source,
             })
@@ -190,7 +190,7 @@ pub fn parse_memory_limit(s: &str) -> Result<u64> {
 
     let s = s.trim();
     if s.is_empty() {
-        return Err(CliError::from(Error::InvalidMemoryLimit(
+        return Err(DiagnosticCause::from(Error::InvalidMemoryLimit(
             "Empty memory limit".to_string(),
         )));
     }
@@ -202,7 +202,7 @@ pub fn parse_memory_limit(s: &str) -> Result<u64> {
             'G' => (&s[..s.len() - 1], GB),
             _ if last_char.is_ascii_digit() => (s, 1),
             _ => {
-                return Err(CliError::from(Error::InvalidMemoryLimit(format!(
+                return Err(DiagnosticCause::from(Error::InvalidMemoryLimit(format!(
                     "Invalid memory limit suffix: {last_char}"
                 ))))
             }
@@ -212,13 +212,13 @@ pub fn parse_memory_limit(s: &str) -> Result<u64> {
     };
 
     let number: u64 = number_part.parse().map_err(|_| {
-        CliError::from(Error::InvalidMemoryLimit(format!(
+        DiagnosticCause::from(Error::InvalidMemoryLimit(format!(
             "Invalid number: {number_part}"
         )))
     })?;
 
     number.checked_mul(multiplier).ok_or_else(|| {
-        CliError::from(Error::InvalidMemoryLimit(
+        DiagnosticCause::from(Error::InvalidMemoryLimit(
             "Memory limit too large (overflow)".to_string(),
         ))
     })
@@ -236,11 +236,8 @@ pub fn parse_memory_limit(s: &str) -> Result<u64> {
 ///
 /// Returns `Ok(())` on success, or an error if any file operation fails.
 /// Gracefully handles `BrokenPipe` errors by returning `Ok(())`.
-fn process_list_files(
-    files: &[String],
-    config: &CliConfig,
-    program: &str,
-) -> std::result::Result<(), InvocationError> {
+fn process_list_files(files: &[String], config: &CliConfig, program: &str) -> Report {
+    let mut report = Report::default();
     let total = files.len();
     let mut header_printed = false;
     let mut totals = ListSummary::default();
@@ -262,23 +259,26 @@ fn process_list_files(
                 totals.checks_mask |= summary.checks_mask;
             }
             Err(err) => {
-                // Handle broken pipe gracefully (e.g., when piping to `head`)
-                if let Some(crate::error::Error::WriteOutput { source }) = err.as_error() {
-                    if source.kind() == io::ErrorKind::BrokenPipe {
-                        return Ok(());
-                    }
+                // Handle broken pipe gracefully (e.g., when piping to `head`).
+                if is_broken_pipe(&err) {
+                    return report;
                 }
-                return Err(InvocationError::new(err, program, Some(file)));
+                report.record(err, program, Some(file));
             }
         }
     }
 
     // Print summary line for multiple files (non-verbose, non-robot mode)
     if total > 1 && !config.robot && !config.verbose {
-        print_list_totals(totals, total).map_err(|err| InvocationError::new(err, program, None))?;
+        if let Err(err) = print_list_totals(totals, total) {
+            if is_broken_pipe(&err) {
+                return report;
+            }
+            report.record(err, program, None);
+        }
     }
 
-    Ok(())
+    report
 }
 
 /// Processes multiple files sequentially in non-list modes.
@@ -292,15 +292,20 @@ fn process_list_files(
 /// # Returns
 ///
 /// Returns `Ok(())` if all files were processed successfully.
-fn process_files(
-    files: &[String],
-    config: &CliConfig,
-    program: &str,
-) -> std::result::Result<(), InvocationError> {
+fn process_files(files: &[String], config: &CliConfig, program: &str) -> Report {
+    let mut report = Report::default();
     for file in files {
-        process_file(file, config).map_err(|err| InvocationError::new(err, program, Some(file)))?;
+        match process_file(file, config) {
+            Ok(()) => {}
+            Err(err) => {
+                if is_broken_pipe(&err) {
+                    return report;
+                }
+                report.record(err, program, Some(file));
+            }
+        }
     }
-    Ok(())
+    report
 }
 
 /// Runs a CLI command over multiple input files with error context.
@@ -317,33 +322,49 @@ fn process_files(
 ///
 /// # Returns
 ///
-/// Returns `Ok(())` if all files were processed successfully.
+/// Returns a [`Report`] containing the aggregated exit status and all diagnostics.
 ///
 /// # Errors
 ///
-/// Returns an error if any file operation fails. The error message includes
-/// the program name and file path for better error reporting. Processing stops
-/// at the first error.
-pub fn run_cli(
-    files: &[String],
-    config: &CliConfig,
-    program: &str,
-) -> std::result::Result<(), InvocationError> {
+/// This function does not fail fast. It continues processing remaining files
+/// after per-file errors and aggregates the exit code like upstream `xz`.
+pub fn run_cli(files: &[String], config: &CliConfig, program: &str) -> Report {
+    let mut report = Report::default();
+
     if config.mode == OperationMode::List && files.is_empty() {
-        return Err(InvocationError::new(
-            CliError::from(Error::ListModeStdinUnsupported),
+        report.record(
+            DiagnosticCause::from(Error::ListModeStdinUnsupported),
             program,
             None,
-        ));
+        );
+        report.status = ExitStatus::Error;
+        return report;
     }
 
     if files.is_empty() {
-        process_file("", config).map_err(|err| InvocationError::new(err, program, None))?;
+        match process_file("", config) {
+            Ok(()) => {}
+            Err(err) => {
+                if !is_broken_pipe(&err) {
+                    report.record(err, program, None);
+                }
+            }
+        }
     } else if config.mode == OperationMode::List {
-        process_list_files(files, config, program)?;
+        report = process_list_files(files, config, program);
     } else {
-        process_files(files, config, program)?;
+        report = process_files(files, config, program);
     }
 
-    Ok(())
+    report
+}
+
+/// Returns `true` if the diagnostic cause is a `BrokenPipe` write error.
+fn is_broken_pipe(err: &DiagnosticCause) -> bool {
+    match err.as_error() {
+        Some(crate::error::Error::WriteOutput { source }) => {
+            source.kind() == io::ErrorKind::BrokenPipe
+        }
+        _ => false,
+    }
 }

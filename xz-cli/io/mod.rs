@@ -6,7 +6,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use crate::config::{CliConfig, OperationMode, DEFAULT_BUFFER_SIZE, LZMA_EXTENSION, XZ_EXTENSION};
-use crate::error::{CliError, Error, Result, Warning};
+use crate::error::{DiagnosticCause, Error, Result, Warning};
 
 mod sparse_writer;
 
@@ -75,7 +75,7 @@ pub fn generate_output_filename(
                 if let Some(file_name) = input.file_name().and_then(OsStr::to_str) {
                     let target_suffix = format!(".{extension}");
                     if file_name.ends_with(&target_suffix) {
-                        return Err(CliError::from(Warning::AlreadyHasSuffix {
+                        return Err(DiagnosticCause::from(Warning::AlreadyHasSuffix {
                             path: input.to_path_buf(),
                             suffix: target_suffix,
                         }));
@@ -116,14 +116,14 @@ pub fn generate_output_filename(
                     }
                 }
 
-                return Err(CliError::from(Warning::InvalidExtension {
+                return Err(DiagnosticCause::from(Warning::InvalidExtension {
                     path: input.to_path_buf(),
                 }));
             }
 
             // Ensure the input file has a recognized compression extension
             if !has_compression_extension(input) {
-                return Err(CliError::from(Warning::InvalidExtension {
+                return Err(DiagnosticCause::from(Warning::InvalidExtension {
                     path: input.to_path_buf(),
                 }));
             }
@@ -134,7 +134,7 @@ pub fn generate_output_filename(
                 .ok_or_else(|| Error::InvalidOutputFilename {
                     path: input.to_path_buf(),
                 })
-                .map_err(CliError::from)?;
+                .map_err(DiagnosticCause::from)?;
 
             // Use the parent directory, or current directory if none
             let parent = input.parent().unwrap_or_else(|| Path::new("."));
@@ -169,7 +169,7 @@ pub fn open_input(path: &str) -> Result<Box<dyn io::Read>> {
         )))
     } else {
         let file = File::open(path).map_err(|source| {
-            CliError::from(Error::OpenInput {
+            DiagnosticCause::from(Error::OpenInput {
                 path: path.to_string(),
                 source,
             })
@@ -213,12 +213,12 @@ pub fn open_output(path: Option<&Path>, config: &CliConfig) -> Result<Box<dyn io
     } else if let Some(path) = path {
         // Check if output file exists and we're not forcing overwrite
         if path.exists() && !config.force {
-            return Err(CliError::from(Error::OutputExists {
+            return Err(DiagnosticCause::from(Error::OutputExists {
                 path: path.to_path_buf(),
             }));
         }
         let file = File::create(path).map_err(|source| {
-            CliError::from(Error::CreateOutput {
+            DiagnosticCause::from(Error::CreateOutput {
                 path: path.to_path_buf(),
                 source,
             })
@@ -247,13 +247,13 @@ pub fn open_output(path: Option<&Path>, config: &CliConfig) -> Result<Box<dyn io
 /// Returns an error if the file exists and overwrite isn't forced, or if creation fails.
 pub(crate) fn open_output_file(path: &Path, config: &CliConfig) -> Result<File> {
     if path.exists() && !config.force {
-        return Err(CliError::from(Error::OutputExists {
+        return Err(DiagnosticCause::from(Error::OutputExists {
             path: path.to_path_buf(),
         }));
     }
 
     File::create(path).map_err(|source| {
-        CliError::from(Error::CreateOutput {
+        DiagnosticCause::from(Error::CreateOutput {
             path: path.to_path_buf(),
             source,
         })

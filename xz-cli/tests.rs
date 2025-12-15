@@ -154,7 +154,7 @@ fn generate_output_filename_decompress_invalid_extension() {
     assert!(result.is_err());
     assert!(matches!(
         result.unwrap_err(),
-        CliError::Warning(Warning::InvalidExtension { .. })
+        DiagnosticCause::Warning(Warning::InvalidExtension { .. })
     ));
 }
 
@@ -212,7 +212,7 @@ fn generate_output_filename_decompress_custom_suffix_mismatch() {
     assert!(result.is_err());
     assert!(matches!(
         result,
-        Err(CliError::Warning(Warning::InvalidExtension { .. }))
+        Err(DiagnosticCause::Warning(Warning::InvalidExtension { .. }))
     ));
 }
 
@@ -224,7 +224,7 @@ fn generate_output_filename_compress_already_has_suffix() {
     assert!(result.is_err());
     assert!(matches!(
         result,
-        Err(CliError::Warning(Warning::AlreadyHasSuffix { .. }))
+        Err(DiagnosticCause::Warning(Warning::AlreadyHasSuffix { .. }))
     ));
 
     let input = Path::new("test.custom");
@@ -232,7 +232,7 @@ fn generate_output_filename_compress_already_has_suffix() {
     assert!(result.is_err());
     assert!(matches!(
         result,
-        Err(CliError::Warning(Warning::AlreadyHasSuffix { .. }))
+        Err(DiagnosticCause::Warning(Warning::AlreadyHasSuffix { .. }))
     ));
 
     let input = Path::new("test.myext");
@@ -240,7 +240,7 @@ fn generate_output_filename_compress_already_has_suffix() {
     assert!(result.is_err());
     assert!(matches!(
         result,
-        Err(CliError::Warning(Warning::AlreadyHasSuffix { .. }))
+        Err(DiagnosticCause::Warning(Warning::AlreadyHasSuffix { .. }))
     ));
 }
 
@@ -396,7 +396,7 @@ fn invalid_compression_level() {
     let err = compress_file(Cursor::new(data), &mut output_vec, &config).unwrap_err();
     assert!(matches!(
         err,
-        CliError::Error(Error::InvalidCompressionLevel { level: 300 })
+        DiagnosticCause::Error(Error::InvalidCompressionLevel { level: 300 })
     ));
 }
 
@@ -410,7 +410,10 @@ fn decompress_corrupted_data() {
     let config = CliConfig::default();
 
     let err = decompress_file(Cursor::new(corrupted_data), &mut output_vec, &config).unwrap_err();
-    assert!(matches!(err, CliError::Error(Error::Decompression { .. })));
+    assert!(matches!(
+        err,
+        DiagnosticCause::Error(Error::Decompression { .. })
+    ));
 }
 
 /// Test verbose flag behavior

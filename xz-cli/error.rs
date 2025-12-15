@@ -5,74 +5,142 @@ use std::path::PathBuf;
 
 use thiserror::Error;
 
-/// A structured CLI error that preserves the underlying failure.
+/// Severity of a CLI diagnostic.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Severity {
+    /// Non-fatal condition (upstream usually prints as a warning/notice).
+    Warning,
+    /// Fatal condition.
+    Error,
+}
+
+/// Aggregated exit status for processing multiple input files.
+///
+/// This follows upstream `xz` semantics:
+/// - `0`: success (no warnings/errors)
+/// - `1`: at least one real error occurred
+/// - `2`: only warnings occurred (no real errors)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ExitStatus {
+    /// No warnings or errors.
+    #[default]
+    Ok,
+    /// One or more warnings, but no real errors.
+    Warning,
+    /// One or more real errors (takes precedence over warnings).
+    Error,
+}
+
+impl ExitStatus {
+    /// Returns the numeric exit code corresponding to this status.
+    pub const fn code(self) -> i32 {
+        match self {
+            ExitStatus::Ok => 0,
+            ExitStatus::Error => 1,
+            ExitStatus::Warning => 2,
+        }
+    }
+
+    /// Updates this status with a new per-file result.
+    pub fn observe_cli_error(&mut self, cause: &DiagnosticCause) {
+        match cause {
+            DiagnosticCause::Warning(_) => {
+                if *self == ExitStatus::Ok {
+                    *self = ExitStatus::Warning;
+                }
+            }
+            DiagnosticCause::Error(_) => {
+                *self = ExitStatus::Error;
+            }
+        }
+    }
+}
+
+/// Result of running the CLI over potentially multiple input files.
+#[derive(Debug, Default)]
+pub struct Report {
+    /// Aggregated exit status.
+    pub status: ExitStatus,
+    /// All per-file and invocation-level diagnostics encountered.
+    pub diagnostics: Vec<Diagnostic>,
+}
+
+impl Report {
+    /// Records a diagnostic and updates aggregated status.
+    pub fn record(&mut self, cause: DiagnosticCause, program: &str, file: Option<&str>) {
+        self.status.observe_cli_error(&cause);
+        self.diagnostics.push(Diagnostic::new(cause, program, file));
+    }
+}
+
+/// A structured CLI diagnostic that preserves the underlying failure and context.
 ///
 /// This is used to implement `-q/-qq` output suppression while keeping rich
 /// error context (program name and input file).
 #[derive(Debug)]
-pub struct InvocationError {
+pub struct Diagnostic {
     /// Program name to prefix in error output (e.g. "xz", "unxz").
     pub program: String,
     /// Input file path, or `None` for stdin.
     pub file: Option<String>,
-    /// Underlying error produced by processing.
-    pub source: CliError,
+    /// Underlying diagnostic cause produced by processing.
+    pub cause: DiagnosticCause,
 }
 
-impl InvocationError {
-    /// Creates a new `InvocationError` by wrapping a CLI error with program and file context.
+impl Diagnostic {
+    /// Creates a new [`Diagnostic`] by wrapping a diagnostic cause with program and file context.
     ///
     /// # Parameters
     ///
-    /// * `err` - The underlying CLI error to wrap
+    /// * `cause` - The underlying diagnostic cause to wrap
     /// * `program` - Program name to include in error messages (e.g., "xz", "unxz", "xzcat")
     /// * `file` - Optional file path associated with the error. Use `None` for stdin or
     ///   when no specific file is associated with the error.
     ///
     /// # Returns
     ///
-    /// Returns a new `InvocationError` instance with the provided context.
-    pub fn new(err: CliError, program: &str, file: Option<&str>) -> Self {
+    /// Returns a new [`Diagnostic`] instance with the provided context.
+    pub fn new(cause: DiagnosticCause, program: &str, file: Option<&str>) -> Self {
         Self {
             program: program.to_string(),
             file: file.map(String::from),
-            source: err,
+            cause,
         }
     }
 }
 
-impl std::fmt::Display for InvocationError {
+impl std::fmt::Display for Diagnostic {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.file.as_deref() {
-            Some(file) => write!(f, "{}: {}: {}", self.program, file, self.source),
-            None => write!(f, "{}: (stdin): {}", self.program, self.source),
+            Some(file) => write!(f, "{}: {}: {}", self.program, file, self.cause),
+            None => write!(f, "{}: (stdin): {}", self.program, self.cause),
         }
     }
 }
 
-impl std::error::Error for InvocationError {
+impl std::error::Error for Diagnostic {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        Some(&self.source)
+        Some(&self.cause)
     }
 }
 
-/// Formats an error message for stderr, respecting `-q/-qq`.
+/// Formats a diagnostic message for stderr, respecting `-q/-qq`.
 ///
 /// # Parameters
 ///
 /// - `quiet`: Quiet level (as counted by `-q` occurrences).
-/// - `err`: The I/O error returned by the CLI runner.
+/// - `diagnostic`: Diagnostic returned by the CLI runner.
 ///
 /// # Returns
 ///
 /// Returns `None` when the message should be suppressed by `quiet`,
 /// otherwise returns a formatted single-line message suitable for stderr.
-pub fn format_error_for_stderr(quiet: u8, err: &InvocationError) -> Option<String> {
-    if quiet >= 2 || quiet >= 1 && err.source.as_warning().is_some() {
+pub fn format_diagnostic_for_stderr(quiet: u8, diagnostic: &Diagnostic) -> Option<String> {
+    if quiet >= 2 || quiet >= 1 && diagnostic.cause.severity() == Severity::Warning {
         return None;
     }
 
-    Some(err.to_string())
+    Some(diagnostic.to_string())
 }
 
 /// Warning conditions for XZ CLI operations.
@@ -204,11 +272,11 @@ pub enum Error {
 }
 
 /// Specialized `Result` type for XZ CLI operations.
-pub type Result<T> = std::result::Result<T, CliError>;
+pub type Result<T> = std::result::Result<T, DiagnosticCause>;
 
 /// This represents both "real" failures and warning/notice conditions.
 #[derive(Debug, Error)]
-pub enum CliError {
+pub enum DiagnosticCause {
     /// Warning/notice condition.
     #[error(transparent)]
     Warning(#[from] Warning),
@@ -218,50 +286,28 @@ pub enum CliError {
     Error(#[from] Error),
 }
 
-impl CliError {
+impl DiagnosticCause {
+    /// Returns the severity for this diagnostic.
+    pub const fn severity(&self) -> Severity {
+        match self {
+            DiagnosticCause::Warning(_) => Severity::Warning,
+            DiagnosticCause::Error(_) => Severity::Error,
+        }
+    }
+
     /// Returns a reference to the warning if this error represents a warning/notice.
     pub fn as_warning(&self) -> Option<&Warning> {
         match self {
-            CliError::Warning(w) => Some(w),
-            CliError::Error(_) => None,
+            DiagnosticCause::Warning(w) => Some(w),
+            DiagnosticCause::Error(_) => None,
         }
     }
 
     /// Returns a reference to the underlying "real" error, if any.
     pub fn as_error(&self) -> Option<&Error> {
         match self {
-            CliError::Warning(_) => None,
-            CliError::Error(e) => Some(e),
-        }
-    }
-}
-
-impl From<CliError> for io::Error {
-    fn from(err: CliError) -> Self {
-        match &err {
-            CliError::Warning(_) => io::Error::new(io::ErrorKind::InvalidInput, err),
-            CliError::Error(source) => match source {
-                Error::OutputExists { .. } => io::Error::new(io::ErrorKind::AlreadyExists, err),
-                Error::InvalidOutputFilename { .. }
-                | Error::InvalidCompressionLevel { .. }
-                | Error::InvalidThreadCount { .. }
-                | Error::InvalidMemoryLimit(_)
-                | Error::ListModeStdinUnsupported => {
-                    io::Error::new(io::ErrorKind::InvalidInput, err)
-                }
-                Error::Compression { .. }
-                | Error::Decompression { .. }
-                | Error::FileInfoExtraction { .. } => {
-                    io::Error::new(io::ErrorKind::InvalidData, err)
-                }
-                Error::OpenInput { source, .. }
-                | Error::CreateOutput { source, .. }
-                | Error::RemoveFile { source, .. }
-                | Error::WriteOutput { source } => {
-                    // Preserve the original error kind
-                    io::Error::new(source.kind(), err)
-                }
-            },
+            DiagnosticCause::Warning(_) => None,
+            DiagnosticCause::Error(e) => Some(e),
         }
     }
 }

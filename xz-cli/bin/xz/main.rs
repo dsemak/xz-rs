@@ -9,8 +9,8 @@ mod opts;
 
 use opts::XzOpts;
 
-use xz_cli::{argfiles, CliError, Error, InvocationError, Result};
-use xz_cli::{format_error_for_stderr, run_cli};
+use xz_cli::{argfiles, Diagnostic, DiagnosticCause, Error, Result};
+use xz_cli::{format_diagnostic_for_stderr, run_cli};
 
 const PROGRAM_NAME: &str = "xz";
 
@@ -33,19 +33,23 @@ fn main() -> std::io::Result<()> {
     let files = match resolve_input_files(&opts) {
         Ok(files) => files,
         Err(err) => {
-            let err = InvocationError::new(err, PROGRAM_NAME, None);
-            if let Some(msg) = format_error_for_stderr(config.quiet, &err) {
+            let diagnostic = Diagnostic::new(err, PROGRAM_NAME, None);
+            if let Some(msg) = format_diagnostic_for_stderr(config.quiet, &diagnostic) {
                 eprintln!("{msg}");
             }
             process::exit(1);
         }
     };
 
-    if let Err(err) = run_cli(&files, &config, PROGRAM_NAME) {
-        if let Some(msg) = format_error_for_stderr(config.quiet, &err) {
+    let report = run_cli(&files, &config, PROGRAM_NAME);
+    for diagnostic in &report.diagnostics {
+        if let Some(msg) = format_diagnostic_for_stderr(config.quiet, diagnostic) {
             eprintln!("{msg}");
         }
-        process::exit(1);
+    }
+    let code = report.status.code();
+    if code != 0 {
+        process::exit(code);
     }
 
     Ok(())
@@ -57,7 +61,7 @@ fn resolve_input_files(opts: &XzOpts) -> Result<Vec<String>> {
     if let Some(path) = opts.files_from_file.as_deref() {
         let extra =
             argfiles::read_files(Some(path), argfiles::Delimiter::Line).map_err(|source| {
-                CliError::Error(Error::OpenInput {
+                DiagnosticCause::Error(Error::OpenInput {
                     path: path.to_string(),
                     source,
                 })
@@ -68,7 +72,7 @@ fn resolve_input_files(opts: &XzOpts) -> Result<Vec<String>> {
     if let Some(path) = opts.files0_from_file.as_deref() {
         let extra =
             argfiles::read_files(Some(path), argfiles::Delimiter::Nul).map_err(|source| {
-                CliError::Error(Error::OpenInput {
+                DiagnosticCause::Error(Error::OpenInput {
                     path: path.to_string(),
                     source,
                 })

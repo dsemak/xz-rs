@@ -2,7 +2,7 @@
 
 use std::io;
 
-use crate::error::{CliError, Error, Result};
+use crate::error::{DiagnosticCause, Error, Result};
 use crate::utils::{bytes, math};
 use xz_core::file_info::{BlockInfo, StreamInfo};
 
@@ -66,7 +66,7 @@ fn write_stdout_line(line: &str) -> Result<()> {
     use std::io::Write;
 
     let mut out = io::stdout().lock();
-    writeln!(out, "{line}").map_err(|source| CliError::from(Error::WriteOutput { source }))?;
+    writeln!(out, "{line}").map_err(|source| DiagnosticCause::from(Error::WriteOutput { source }))?;
     Ok(())
 }
 
@@ -131,7 +131,7 @@ pub(crate) fn write_list_header_if_needed(ctx: ListOutputContext) -> Result<()> 
         out,
         "Strms  Blocks   Compressed Uncompressed  Ratio  Check   Filename"
     )
-    .map_err(|source| CliError::from(Error::WriteOutput { source }))?;
+    .map_err(|source| DiagnosticCause::from(Error::WriteOutput { source }))?;
     Ok(())
 }
 
@@ -165,7 +165,7 @@ pub(crate) fn write_list_row(summary: ListSummary, input_path: &str) -> Result<(
         check,
         input_path
     )
-    .map_err(|source| CliError::from(Error::WriteOutput { source }))?;
+    .map_err(|source| DiagnosticCause::from(Error::WriteOutput { source }))?;
     Ok(())
 }
 
@@ -200,40 +200,40 @@ pub(crate) fn write_verbose_report(
 
     let mut out = io::stdout().lock();
     writeln!(out, "{input_path} ({}/{})", ctx.file_index, ctx.file_count)
-        .map_err(|source| CliError::from(Error::WriteOutput { source }))?;
+        .map_err(|source| DiagnosticCause::from(Error::WriteOutput { source }))?;
     writeln!(out, "  Streams:           {}", summary.stream_count)
-        .map_err(|source| CliError::from(Error::WriteOutput { source }))?;
+        .map_err(|source| DiagnosticCause::from(Error::WriteOutput { source }))?;
     writeln!(out, "  Blocks:            {}", summary.block_count)
-        .map_err(|source| CliError::from(Error::WriteOutput { source }))?;
+        .map_err(|source| DiagnosticCause::from(Error::WriteOutput { source }))?;
     writeln!(
         out,
         "  Compressed size:   {}",
         bytes::format_list_size_with_bytes(summary.compressed)
     )
-    .map_err(|source| CliError::from(Error::WriteOutput { source }))?;
+    .map_err(|source| DiagnosticCause::from(Error::WriteOutput { source }))?;
     writeln!(
         out,
         "  Uncompressed size: {}",
         bytes::format_list_size_with_bytes(summary.uncompressed)
     )
-    .map_err(|source| CliError::from(Error::WriteOutput { source }))?;
+    .map_err(|source| DiagnosticCause::from(Error::WriteOutput { source }))?;
     writeln!(out, "  Ratio:             {ratio:.3}")
-        .map_err(|source| CliError::from(Error::WriteOutput { source }))?;
+        .map_err(|source| DiagnosticCause::from(Error::WriteOutput { source }))?;
     writeln!(out, "  Check:             {check}")
-        .map_err(|source| CliError::from(Error::WriteOutput { source }))?;
+        .map_err(|source| DiagnosticCause::from(Error::WriteOutput { source }))?;
     writeln!(
         out,
         "  Stream Padding:    {}",
         bytes::format_list_size(padding_total)
     )
-    .map_err(|source| CliError::from(Error::WriteOutput { source }))?;
+    .map_err(|source| DiagnosticCause::from(Error::WriteOutput { source }))?;
 
-    writeln!(out, "  Streams:").map_err(|source| CliError::from(Error::WriteOutput { source }))?;
+    writeln!(out, "  Streams:").map_err(|source| DiagnosticCause::from(Error::WriteOutput { source }))?;
     writeln!(
         out,
         "    Stream    Blocks      CompOffset    UncompOffset        CompSize      UncompSize  Ratio  Check      Padding"
     )
-    .map_err(|source| CliError::from(Error::WriteOutput { source }))?;
+    .map_err(|source| DiagnosticCause::from(Error::WriteOutput { source }))?;
 
     for stream in streams {
         let stream_ratio = math::ratio_fraction(stream.compressed_size, stream.uncompressed_size);
@@ -250,15 +250,15 @@ pub(crate) fn write_verbose_report(
             check,
             stream.padding
         )
-        .map_err(|source| CliError::from(Error::WriteOutput { source }))?;
+        .map_err(|source| DiagnosticCause::from(Error::WriteOutput { source }))?;
     }
 
-    writeln!(out, "  Blocks:").map_err(|source| CliError::from(Error::WriteOutput { source }))?;
+    writeln!(out, "  Blocks:").map_err(|source| DiagnosticCause::from(Error::WriteOutput { source }))?;
     writeln!(
         out,
         "    Stream     Block      CompOffset    UncompOffset       TotalSize      UncompSize  Ratio  Check"
     )
-    .map_err(|source| CliError::from(Error::WriteOutput { source }))?;
+    .map_err(|source| DiagnosticCause::from(Error::WriteOutput { source }))?;
 
     let mut stream_idx: usize = 0;
     let mut remaining_in_stream: u64 = streams.get(stream_idx).map(|s| s.block_count).unwrap_or(0);
@@ -284,7 +284,7 @@ pub(crate) fn write_verbose_report(
             block_ratio,
             check
         )
-        .map_err(|source| CliError::from(Error::WriteOutput { source }))?;
+        .map_err(|source| DiagnosticCause::from(Error::WriteOutput { source }))?;
     }
 
     Ok(())

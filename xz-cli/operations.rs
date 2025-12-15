@@ -11,7 +11,7 @@ use xz_core::{
 };
 
 use crate::config::CliConfig;
-use crate::error::{CliError, Error, Result};
+use crate::error::{DiagnosticCause, Error, Result};
 use crate::format::list::{self, ListOutputContext, ListSummary};
 
 /// Compresses data from an input reader to an output writer.
@@ -52,7 +52,7 @@ pub fn compress_file(
     let compression_level = match (config.level, config.extreme) {
         (Some(level), true) => Compression::Extreme(level as u8),
         (Some(level), false) => Compression::try_from(level)
-            .map_err(|_| CliError::from(Error::InvalidCompressionLevel { level }))?,
+            .map_err(|_| DiagnosticCause::from(Error::InvalidCompressionLevel { level }))?,
         (None, true) => Compression::Extreme(Compression::default().to_preset() as u8),
         (None, false) => Compression::default(),
     };
@@ -62,13 +62,13 @@ pub fn compress_file(
     // Set thread count if specified
     if let Some(threads) = config.threads {
         let thread_count = u32::try_from(threads)
-            .map_err(|_| CliError::from(Error::InvalidThreadCount { count: threads }))?;
+            .map_err(|_| DiagnosticCause::from(Error::InvalidThreadCount { count: threads }))?;
         options = options.with_threads(xz_core::Threading::Exact(thread_count));
     }
 
     // Perform compression and handle errors
     let summary = compress(&mut input, &mut output, &options).map_err(|e| {
-        CliError::from(Error::Compression {
+        DiagnosticCause::from(Error::Compression {
             path: "(input)".to_string(),
             message: e.to_string(),
         })
@@ -130,7 +130,7 @@ pub fn decompress_file(
     // Set thread count if specified
     if let Some(threads) = config.threads {
         let thread_count = u32::try_from(threads)
-            .map_err(|_| CliError::from(Error::InvalidThreadCount { count: threads }))?;
+            .map_err(|_| DiagnosticCause::from(Error::InvalidThreadCount { count: threads }))?;
         options = options.with_threads(xz_core::Threading::Exact(thread_count));
     }
 
@@ -164,7 +164,7 @@ pub fn decompress_file(
 
     // Perform decompression and handle errors
     let summary = decompress(&mut input, &mut output, &options).map_err(|e| {
-        CliError::from(Error::Decompression {
+        DiagnosticCause::from(Error::Decompression {
             path: "(input)".to_string(),
             message: e.to_string(),
         })
@@ -255,11 +255,11 @@ pub(crate) fn list_file_with_context(
     ctx: ListOutputContext,
 ) -> Result<ListSummary> {
     if input_path.is_empty() || input_path == "-" {
-        return Err(CliError::from(Error::ListModeStdinUnsupported));
+        return Err(DiagnosticCause::from(Error::ListModeStdinUnsupported));
     }
 
     let mut file = File::open(input_path).map_err(|source| {
-        CliError::from(Error::OpenInput {
+        DiagnosticCause::from(Error::OpenInput {
             path: input_path.to_string(),
             source,
         })
@@ -268,7 +268,7 @@ pub(crate) fn list_file_with_context(
     // Extract file info
     let memlimit = config.memory_limit.and_then(std::num::NonZeroU64::new);
     let info = file_info::extract_file_info(&mut file, memlimit).map_err(|e| {
-        CliError::from(Error::FileInfoExtraction {
+        DiagnosticCause::from(Error::FileInfoExtraction {
             path: input_path.to_string(),
             message: e.to_string(),
         })
@@ -297,7 +297,7 @@ pub(crate) fn list_file_with_context(
             info.uncompressed_size(),
             ratio(info.file_size(), info.uncompressed_size())
         )
-        .map_err(|source| CliError::from(Error::WriteOutput { source }))?;
+        .map_err(|source| DiagnosticCause::from(Error::WriteOutput { source }))?;
     } else if config.verbose {
         let streams = info.streams();
         let mut blocks = info.blocks();

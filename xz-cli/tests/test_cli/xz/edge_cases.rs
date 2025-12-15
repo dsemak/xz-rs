@@ -275,3 +275,34 @@ add_test!(list_rejects_no_files_stdin, async {
     assert!(!output.status.success());
     assert!(output.stderr.contains("not support"));
 });
+
+// Test upstream-like exit codes and continued processing across multiple files:
+// - one file succeeds
+// - one file produces a warning (skipped)
+// - one file produces a real error
+add_test!(exit_codes_ok_warning_error, async {
+    const OK_FILE: &str = "ok.txt";
+    const WARNING_FILE: &str = "warning.txt.xz";
+
+    let mut fixture = Fixture::with_files(
+        &[OK_FILE, WARNING_FILE],
+        &[b"ok payload", b"warning payload"],
+    );
+
+    let ok_path = fixture.path(OK_FILE);
+    let warning_path = fixture.path(WARNING_FILE);
+    let missing_path = fixture.path("missing.txt");
+
+    let output = fixture
+        .run_cargo("xz", &["-k", &ok_path, &warning_path, &missing_path])
+        .await;
+
+    assert_eq!(output.status.code(), Some(1));
+
+    // Successful file is still processed even if later files warn/error.
+    assert!(fixture.file_exists(&format!("{OK_FILE}.xz")));
+
+    // Warning file is skipped (already has .xz suffix), so no .xz.xz is created.
+    assert!(fixture.file_exists(WARNING_FILE));
+    assert!(!fixture.file_exists(&format!("{WARNING_FILE}.xz")));
+});
