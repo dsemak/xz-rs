@@ -4,8 +4,9 @@ use std::num::{NonZeroU64, NonZeroUsize};
 use std::time::Duration;
 
 use lzma_safe::decoder::options::{Flags as DecoderFlags, Options as DecoderMtOptions};
+use lzma_safe::encoder::options::Lzma1Options;
 use lzma_safe::encoder::options::Options as EncoderMtOptions;
-use lzma_safe::{Decoder, Encoder, Stream};
+use lzma_safe::{AloneEncoder, Decoder, Encoder, Stream};
 
 pub use lzma_safe::decoder::options::Flags;
 pub use lzma_safe::encoder::options::{
@@ -13,6 +14,7 @@ pub use lzma_safe::encoder::options::{
 };
 
 use crate::config::DecodeMode;
+use crate::config::EncodeFormat;
 use crate::error::{Error, Result};
 use crate::threading::{sanitize_threads, Threading};
 
@@ -28,6 +30,8 @@ pub struct CompressionOptions {
     block_size: Option<NonZeroU64>,
     timeout: Option<Duration>,
     filters: Vec<FilterConfig>,
+    format: EncodeFormat,
+    lzma1: Option<Lzma1Options>,
     input_buffer_size: NonZeroUsize,
     output_buffer_size: NonZeroUsize,
 }
@@ -41,8 +45,37 @@ impl Default for CompressionOptions {
             block_size: None,
             timeout: None,
             filters: Vec::new(),
+            format: EncodeFormat::Xz,
+            lzma1: None,
             input_buffer_size: NonZeroUsize::new(DEFAULT_INPUT_BUFFER).unwrap(),
             output_buffer_size: NonZeroUsize::new(DEFAULT_OUTPUT_BUFFER).unwrap(),
+        }
+    }
+}
+
+/// Encoder built from [`CompressionOptions`].
+pub(crate) enum BuiltEncoder {
+    Xz(Encoder),
+    Lzma(AloneEncoder),
+}
+
+impl BuiltEncoder {
+    pub(crate) fn process(
+        &mut self,
+        input: &[u8],
+        output: &mut [u8],
+        action: lzma_safe::Action,
+    ) -> std::result::Result<(usize, usize), lzma_safe::Error> {
+        match self {
+            BuiltEncoder::Xz(enc) => enc.process(input, output, action),
+            BuiltEncoder::Lzma(enc) => enc.process(input, output, action),
+        }
+    }
+
+    pub(crate) fn is_finished(&self) -> bool {
+        match self {
+            BuiltEncoder::Xz(enc) => enc.is_finished(),
+            BuiltEncoder::Lzma(enc) => enc.is_finished(),
         }
     }
 }
@@ -130,6 +163,22 @@ impl CompressionOptions {
         self
     }
 
+    /// Selects the output container format.
+    #[must_use]
+    pub fn with_format(mut self, format: EncodeFormat) -> Self {
+        self.format = format;
+        self
+    }
+
+    /// Sets explicit LZMA1 parameters (only used when format is [`EncodeFormat::Lzma`]).
+    ///
+    /// If not specified, the LZMA1 options are derived from the selected compression preset.
+    #[must_use]
+    pub fn with_lzma1_options(mut self, options: Option<Lzma1Options>) -> Self {
+        self.lzma1 = options;
+        self
+    }
+
     /// Sets the input buffer size for reading source data.
     ///
     /// Larger buffers can improve performance by reducing the number of read
@@ -150,7 +199,14 @@ impl CompressionOptions {
         self
     }
 
-    pub(crate) fn build_encoder(&self) -> Result<Encoder> {
+    pub(crate) fn build_encoder(&self) -> Result<BuiltEncoder> {
+        match self.format {
+            EncodeFormat::Xz => self.build_xz_encoder().map(BuiltEncoder::Xz),
+            EncodeFormat::Lzma => self.build_lzma_encoder().map(BuiltEncoder::Lzma),
+        }
+    }
+
+    fn build_xz_encoder(&self) -> Result<Encoder> {
         let threads = match sanitize_threads(self.threads) {
             Ok(count) => count.max(1),
             Err(Error::InvalidThreadCount { maximum, .. }) => maximum.max(1),
@@ -184,6 +240,43 @@ impl CompressionOptions {
         }
 
         Encoder::new_mt(options, stream).map_err(Error::from)
+    }
+
+    fn build_lzma_encoder(&self) -> Result<AloneEncoder> {
+        if self.check != IntegrityCheck::None {
+            return Err(Error::InvalidOption(
+                "integrity checks are not supported in .lzma format".into(),
+            ));
+        }
+        if let Threading::Exact(requested) = self.threads {
+            if requested > 1 {
+                return Err(Error::ThreadingUnsupported {
+                    requested,
+                    mode: DecodeMode::Lzma,
+                });
+            }
+        }
+        if self.block_size.is_some() {
+            return Err(Error::InvalidOption(
+                "block size is not supported in .lzma format".into(),
+            ));
+        }
+        if self.timeout.is_some() {
+            return Err(Error::InvalidOption(
+                "timeout is not supported in .lzma format".into(),
+            ));
+        }
+        if !self.filters.is_empty() {
+            return Err(Error::InvalidOption(
+                "custom filter chains are not supported in .lzma format".into(),
+            ));
+        }
+
+        let options = match self.lzma1.clone() {
+            Some(v) => v,
+            None => Lzma1Options::from_preset(self.level).map_err(Error::from)?,
+        };
+        AloneEncoder::new(options, Stream::default()).map_err(Error::from)
     }
 
     pub(crate) fn input_capacity(&self) -> usize {

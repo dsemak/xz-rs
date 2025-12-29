@@ -40,7 +40,7 @@ impl BinaryType {
                 let bin_env = format!("CARGO_BIN_EXE_{name}");
                 let path = Self::locate_cargo_binary(name, &bin_env).unwrap_or_else(|| {
                     panic!(
-                        "Binary '{name}' not found. Set '{bin_env}' or build the project binaries."
+                        "Binary '{name}' not found. Set '{bin_env}' or build the project binaries.",
                     )
                 });
                 path.to_string_lossy().into_owned()
@@ -308,6 +308,11 @@ impl Fixture {
         format!("{}.xz", self.path(name))
     }
 
+    /// Get compressed path using the legacy `.lzma` extension.
+    pub fn lzma_path(&self, name: &str) -> String {
+        format!("{}.lzma", self.path(name))
+    }
+
     /// Remove a file from the fixture
     ///
     /// # Panics
@@ -374,8 +379,13 @@ impl Fixture {
 
         if let Some(stdin_bytes) = stdin_bytes {
             if let Some(ref mut stdin) = child.stdin {
-                stdin.write_all(&stdin_bytes).await.unwrap_or_else(|_| {
-                    panic!("failed write to stdin ({} bytes)", stdin_bytes.len())
+                stdin.write_all(&stdin_bytes).await.unwrap_or_else(|err| {
+                    // Some commands intentionally exit early (e.g. rejecting stdin).
+                    // In such cases, the child may close its stdin before we finish writing.
+                    if err.kind() == std::io::ErrorKind::BrokenPipe {
+                        return;
+                    }
+                    panic!("failed write to stdin ({} bytes): {err}", stdin_bytes.len());
                 });
             }
         }

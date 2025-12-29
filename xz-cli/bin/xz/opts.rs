@@ -212,13 +212,22 @@ impl XzOpts {
     }
 
     /// Parse the check type from the check string
-    pub fn check_type(&self) -> Result<IntegrityCheck, Box<dyn std::error::Error>> {
-        match self.check.as_deref() {
-            Some("none") => Ok(IntegrityCheck::None),
-            Some("crc32") => Ok(IntegrityCheck::Crc32),
-            Some("sha256") => Ok(IntegrityCheck::Sha256),
-            Some("crc64") | None => Ok(IntegrityCheck::Crc64),
-            Some(invalid) => Err(format!("{invalid}: Unsupported integrity check type").into()),
+    pub fn check_type_for_format(
+        &self,
+        format: DecodeMode,
+    ) -> Result<IntegrityCheck, Box<dyn std::error::Error>> {
+        match (format, self.check.as_deref()) {
+            (DecodeMode::Lzma, Some("none") | None) => Ok(IntegrityCheck::None),
+            (DecodeMode::Lzma, Some(other)) => {
+                Err(format!("{other}: Integrity checks are not supported in .lzma format").into())
+            }
+            (_, Some("none")) => Ok(IntegrityCheck::None),
+            (_, Some("crc32")) => Ok(IntegrityCheck::Crc32),
+            (_, Some("crc64")) => Ok(IntegrityCheck::Crc64),
+            (_, Some("sha256") | None) => Ok(IntegrityCheck::Sha256),
+            (_, Some(invalid)) => {
+                Err(format!("{invalid}: Unsupported integrity check type").into())
+            }
         }
     }
 
@@ -242,6 +251,7 @@ impl XzOpts {
 
     /// Build CLI configuration from the parsed options
     pub fn config(&self) -> Result<CliConfig, Box<dyn std::error::Error>> {
+        let format = self.file_format()?;
         Ok(CliConfig {
             mode: self.operation_mode(),
             force: self.force,
@@ -253,8 +263,8 @@ impl XzOpts {
             threads: self.threads,
             memory_limit: self.memory,
             extreme: self.extreme,
-            format: self.file_format()?,
-            check: self.check_type()?,
+            format,
+            check: self.check_type_for_format(format)?,
             robot: self.robot,
             suffix: self.suffix.clone(),
             single_stream: self.single_stream,

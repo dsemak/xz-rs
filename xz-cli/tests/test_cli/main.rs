@@ -1,4 +1,7 @@
 pub mod common;
+mod lzcat;
+mod lzma;
+mod unlzma;
 mod unxz;
 mod xz;
 mod xzcat;

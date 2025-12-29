@@ -108,10 +108,17 @@ pub fn process_file(input_path: &str, config: &CliConfig) -> Result<()> {
     {
         None
     } else {
+        let default_extension = match (config.mode, config.format) {
+            (OperationMode::Compress, xz_core::config::DecodeMode::Lzma) => {
+                crate::config::LZMA_EXTENSION
+            }
+            _ => crate::config::XZ_EXTENSION,
+        };
         Some(generate_output_filename(
             &input_path_buf,
             config.mode,
             config.suffix.as_deref(),
+            default_extension,
             config.force,
         )?)
     };

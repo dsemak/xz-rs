@@ -60,6 +60,7 @@ pub fn generate_output_filename(
     input: &Path,
     mode: OperationMode,
     suffix: Option<&str>,
+    default_extension: &str,
     force: bool,
 ) -> Result<PathBuf> {
     match mode {
@@ -68,7 +69,7 @@ pub fn generate_output_filename(
             // Strip leading dot from suffix if present
             let extension = suffix
                 .map(|s| s.strip_prefix('.').unwrap_or(s))
-                .unwrap_or(XZ_EXTENSION);
+                .unwrap_or(default_extension);
 
             // Check if the file already has the target suffix (unless force is enabled)
             if !force {

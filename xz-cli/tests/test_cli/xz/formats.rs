@@ -168,6 +168,32 @@ add_test!(tar_xz_format, async {
     fixture.assert_files(&[FILE_NAME], &[data]);
 });
 
+// Test `xz --format=lzma` creates `.lzma` output and is decodable.
+add_test!(lzma_format_via_xz, async {
+    const FILE_NAME: &str = "test.txt";
+
+    let data = SAMPLE_TEXT.as_bytes();
+    let mut fixture = Fixture::with_file(FILE_NAME, data);
+
+    let file_path = fixture.path(FILE_NAME);
+    let lzma_path = fixture.lzma_path(FILE_NAME);
+
+    // Compress to .lzma using xz
+    let output = fixture
+        .run_cargo("xz", &["--format=lzma", "-k", &file_path])
+        .await;
+    assert!(output.status.success(), "xz failed: {}", output.stderr);
+    assert!(fixture.file_exists("test.txt.lzma"));
+
+    fixture.remove_file(FILE_NAME);
+
+    // Decompress .lzma back using xz auto decoder
+    let output = fixture.run_cargo("xz", &["-d", &lzma_path]).await;
+    assert!(output.status.success(), "xz -d failed: {}", output.stderr);
+
+    fixture.assert_files(&[FILE_NAME], &[data]);
+});
+
 // Test file already with .xz extension
 add_test!(already_xz_extension, async {
     const FILE_NAME: &str = "file.xz";

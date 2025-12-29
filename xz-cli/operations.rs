@@ -4,6 +4,7 @@ use std::fs::File;
 use std::io;
 
 use xz_core::{
+    config::EncodeFormat,
     file_info,
     options::{Compression, CompressionOptions, DecompressionOptions, Flags},
     pipeline::{compress, decompress},
@@ -49,6 +50,20 @@ pub fn compress_file(
 ) -> Result<()> {
     let mut options = CompressionOptions::default();
 
+    let encode_format = match config.format {
+        xz_core::config::DecodeMode::Lzma => EncodeFormat::Lzma,
+        _ => EncodeFormat::Xz,
+    };
+    options = options.with_format(encode_format);
+
+    if encode_format == EncodeFormat::Lzma && config.check != xz_core::options::IntegrityCheck::None
+    {
+        return Err(DiagnosticCause::from(Error::InvalidOption {
+            message: "integrity checks are not supported in .lzma format".into(),
+        }));
+    }
+    options = options.with_check(config.check);
+
     // Determine the compression level and apply extreme mode if enabled
     //
     // Extreme is a modifier that applies to the selected preset level,
@@ -77,6 +92,11 @@ pub fn compress_file(
 
     // Set thread count if specified
     if let Some(threads) = config.threads {
+        if encode_format == EncodeFormat::Lzma && threads > 1 {
+            return Err(DiagnosticCause::from(Error::InvalidOption {
+                message: "threading is not supported in .lzma format".into(),
+            }));
+        }
         let thread_count = u32::try_from(threads)
             .map_err(|_| DiagnosticCause::from(Error::InvalidThreadCount { count: threads }))?;
         options = options.with_threads(xz_core::Threading::Exact(thread_count));

@@ -137,6 +137,18 @@ impl Stream {
         Encoder::new_mt(options, self)
     }
 
+    /// Create an encoder for the legacy `.lzma` (`LZMA_Alone`) format.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the options are not supported by the linked liblzma.
+    pub fn alone_encoder(
+        self,
+        options: encoder::options::Lzma1Options,
+    ) -> Result<encoder::AloneEncoder> {
+        encoder::AloneEncoder::new(options, self)
+    }
+
     /// Create a decoder with the specified memory limit and flags.
     ///
     /// # Parameters

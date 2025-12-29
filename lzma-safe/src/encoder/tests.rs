@@ -1,5 +1,5 @@
 use crate::decoder::options::Flags;
-use crate::encoder::options::{Compression, IntegrityCheck, Options};
+use crate::encoder::options::{Compression, IntegrityCheck, Lzma1Options, Options};
 use crate::{Action, Error, Stream};
 
 use super::*;
@@ -41,6 +41,35 @@ fn encode_all(encoder: &mut Encoder, data: &[u8]) -> Vec<u8> {
     compressed
 }
 
+fn encode_all_alone(encoder: &mut AloneEncoder, data: &[u8]) -> Vec<u8> {
+    let mut output = vec![0u8; 4096];
+    let mut compressed = Vec::new();
+    let mut remaining_data = data;
+
+    while !remaining_data.is_empty() {
+        let (read, written) = encoder
+            .process(remaining_data, &mut output, Action::Run)
+            .unwrap();
+
+        if read == 0 && written == 0 {
+            break;
+        }
+
+        remaining_data = &remaining_data[read..];
+        compressed.extend_from_slice(&output[..written]);
+    }
+
+    while !encoder.is_finished() {
+        let (_, written_finish) = encoder.process(&[], &mut output, Action::Finish).unwrap();
+        if written_finish == 0 {
+            continue;
+        }
+        compressed.extend_from_slice(&output[..written_finish]);
+    }
+
+    compressed
+}
+
 /// Test basic encoder round-trip compression and decompression.
 #[test]
 fn easy_encoder_round_trip() {
@@ -64,6 +93,37 @@ fn easy_encoder_round_trip() {
     assert_eq!(written, TEST_DATA.len());
     assert_eq!(&output[..written], TEST_DATA);
     assert!(decoder.is_finished());
+}
+
+/// Test `.lzma` encoder round-trip via `.lzma` decoder.
+#[test]
+fn alone_encoder_round_trip() {
+    let options = Lzma1Options::from_preset(Compression::Level6).unwrap();
+    let mut encoder = Stream::default().alone_encoder(options).unwrap();
+
+    let compressed = encode_all_alone(&mut encoder, TEST_DATA);
+    assert!(encoder.is_finished());
+    assert_eq!(encoder.total_in(), TEST_DATA.len() as u64);
+    assert!(encoder.total_out() > 0);
+
+    let mut decoder = Stream::default().alone_decoder(u64::MAX).unwrap();
+    let mut output = vec![0u8; TEST_DATA.len() * 2];
+    let (_, written) = decoder.process(&compressed, &mut output, Action::Finish).unwrap();
+    assert_eq!(written, TEST_DATA.len());
+    assert_eq!(&output[..written], TEST_DATA);
+}
+
+/// Test `.lzma` encoder rejects unsupported actions.
+#[test]
+fn alone_encoder_rejects_flush_actions() {
+    let options = Lzma1Options::from_preset(Compression::Level1).unwrap();
+    let mut encoder = Stream::default().alone_encoder(options).unwrap();
+    let mut output = vec![0u8; 128];
+
+    let err = encoder
+        .process(TEST_DATA, &mut output, Action::SyncFlush)
+        .unwrap_err();
+    assert_eq!(err, Error::ProgError);
 }
 
 /// Test encoder state tracking and finish behavior.

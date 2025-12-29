@@ -36,6 +36,15 @@ pub enum DecodeMode {
     Lzma,
 }
 
+/// Encoder container format selection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EncodeFormat {
+    /// XZ container format (default).
+    Xz,
+    /// Legacy `.lzma` (`LZMA_Alone`) container format.
+    Lzma,
+}
+
 /// Statistical summary of completed stream processing operations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StreamSummary {

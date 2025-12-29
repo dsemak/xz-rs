@@ -228,6 +228,13 @@ pub enum Error {
         level: u32,
     },
 
+    /// Invalid option combination or value.
+    #[error("{message}")]
+    InvalidOption {
+        /// Error message describing why the option is invalid.
+        message: String,
+    },
+
     /// Thread count too large
     #[error("The number of threads must not exceed {}", u32::MAX)]
     InvalidThreadCount {
