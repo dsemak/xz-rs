@@ -45,7 +45,7 @@ pub struct UnlzmaOpts {
     #[arg(short = 't', long = "test")]
     test: bool,
 
-    /// Use at most this many threads
+    /// Use at most this many threads (ignored for .lzma; kept for CLI compatibility)
     #[arg(short = 'T', long = "threads", value_name = "NUM")]
     threads: Option<usize>,
 

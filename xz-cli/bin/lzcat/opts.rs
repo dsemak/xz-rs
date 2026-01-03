@@ -29,7 +29,7 @@ pub struct LzCatOpts {
     #[arg(short = 'q', long = "quiet", conflicts_with = "verbose", action = clap::ArgAction::Count)]
     quiet: u8,
 
-    /// Use at most this many threads
+    /// Use at most this many threads (ignored for .lzma; kept for CLI compatibility)
     #[arg(short = 'T', long = "threads", value_name = "NUM")]
     threads: Option<usize>,
 
@@ -63,7 +63,7 @@ impl LzCatOpts {
             threads: self.threads,
             memory_limit: self.memory,
             extreme: false,
-            format: xz_core::config::DecodeMode::Auto,
+            format: xz_core::config::DecodeMode::Lzma,
             check: xz_core::options::IntegrityCheck::None,
             lzma1: None,
             robot: false,

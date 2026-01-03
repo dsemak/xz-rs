@@ -128,10 +128,10 @@ fn apply_threads_for_compression(
         return Ok(options);
     };
 
-    if encode_format == EncodeFormat::Lzma && threads > 1 {
-        return Err(DiagnosticCause::from(Error::InvalidOption {
-            message: "threading is not supported in .lzma format".into(),
-        }));
+    if encode_format == EncodeFormat::Lzma {
+        // `.lzma` is always single-threaded. Keep CLI compatibility by accepting `--threads`
+        // but ignoring it for this container format.
+        return Ok(options);
     }
 
     let thread_count = u32::try_from(threads)
@@ -245,9 +245,11 @@ pub fn decompress_file(
 
     // Set thread count if specified
     if let Some(threads) = config.threads {
-        let thread_count = u32::try_from(threads)
-            .map_err(|_| DiagnosticCause::from(Error::InvalidThreadCount { count: threads }))?;
-        options = options.with_threads(xz_core::Threading::Exact(thread_count));
+        if config.format != xz_core::config::DecodeMode::Lzma {
+            let thread_count = u32::try_from(threads)
+                .map_err(|_| DiagnosticCause::from(Error::InvalidThreadCount { count: threads }))?;
+            options = options.with_threads(xz_core::Threading::Exact(thread_count));
+        }
     }
 
     // Set memory limit if specified

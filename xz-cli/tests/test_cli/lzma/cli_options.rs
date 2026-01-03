@@ -42,3 +42,34 @@ add_test!(lzma1_options_invalid_rejected, async {
         output.stderr
     );
 });
+
+add_test!(threads_ignored_for_lzma_tools, async {
+    const FILE_NAME: &str = "test.txt";
+
+    let data = SAMPLE_TEXT.as_bytes();
+    let mut fixture = Fixture::with_file(FILE_NAME, data);
+
+    let file_path = fixture.path(FILE_NAME);
+    let lzma_path = fixture.lzma_path(FILE_NAME);
+
+    // `--threads` is accepted for CLI compatibility but ignored for `.lzma`.
+    let output = fixture
+        .run_cargo("lzma", &["-T", "4", "-k", &file_path])
+        .await;
+    assert!(output.status.success(), "lzma failed: {}", output.stderr);
+    assert!(fixture.file_exists("test.txt.lzma"));
+
+    fixture.remove_file(FILE_NAME);
+
+    // Decompress using unlzma with threads specified (should be ignored and succeed).
+    let output = fixture
+        .run_cargo("unlzma", &["-T", "4", "-k", &lzma_path])
+        .await;
+    assert!(output.status.success(), "unlzma failed: {}", output.stderr);
+    fixture.assert_files(&[FILE_NAME], &[data]);
+
+    // Verify lzcat behaves the same way (writes to stdout).
+    let output = fixture.run_cargo("lzcat", &["-T", "4", &lzma_path]).await;
+    assert!(output.status.success(), "lzcat failed: {}", output.stderr);
+    assert!(output.stdout_raw == data);
+});
