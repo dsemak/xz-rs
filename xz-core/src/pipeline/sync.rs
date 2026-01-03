@@ -148,18 +148,31 @@ where
                     return Ok(StreamSummary::new(total_in, total_out));
                 }
 
-                // In concatenated mode, finishing before EOF indicates trailing garbage or an
-                // unexpected state. Be strict and require EOF.
+                // In concatenated mode, `StreamEnd` can occur before we have observed EOF at the
+                // `Read` layer (e.g. when the next stream is already buffered or due to backend
+                // semantics). Treat this as end-of-one-stream and continue decoding by starting a
+                // fresh decoder for the next stream.
+                //
+                // Any trailing garbage will be rejected naturally when the next decoder fails to
+                // parse a valid stream.
                 let remaining = pending_len - consumed;
+                decoder = options.build_decoder()?;
                 if remaining > 0 {
-                    return Err(BackendError::DataError.into());
+                    // Continue with the still-buffered bytes.
+                    input.copy_within(consumed..pending_len, 0);
+                    pending_len = remaining;
+                } else {
+                    // No buffered bytes left; read more input to determine whether there's another
+                    // stream or we are done.
+                    let read = reader.read(&mut input)?;
+                    if read == 0 {
+                        writer.flush()?;
+                        return Ok(StreamSummary::new(total_in, total_out));
+                    }
+                    pending_len = read;
                 }
-                let read = reader.read(&mut input)?;
-                if read == 0 {
-                    writer.flush()?;
-                    return Ok(StreamSummary::new(total_in, total_out));
-                }
-                return Err(BackendError::DataError.into());
+                consumed = 0;
+                continue;
             }
 
             if used == 0 && written == 0 {
@@ -316,7 +329,9 @@ mod tests {
     use std::time::Duration;
 
     use crate::config::DecodeMode;
-    use crate::options::{Compression, CompressionOptions, DecompressionOptions, IntegrityCheck};
+    use crate::options::{
+        Compression, CompressionOptions, DecompressionOptions, Flags, IntegrityCheck,
+    };
     use crate::pipeline::tests::{
         FailingReader, FailingWriter, SlowReader, EMPTY_SAMPLE, LARGE_SAMPLE, SAMPLE,
     };
@@ -766,5 +781,55 @@ mod tests {
         let mut decompressed = Vec::new();
         let _ = decompress(&mut compressed_cursor, &mut decompressed, &options).unwrap();
         assert!(decompressed == SAMPLE);
+    }
+
+    /// Test that concatenated `.xz` streams are decoded fully when `CONCATENATED` is set.
+    #[test]
+    fn sync_concatenated_xz_streams_decode_fully() {
+        let options = CompressionOptions::default();
+
+        let mut compressed_a = Vec::new();
+        let a_summary = match compress(SAMPLE, &mut compressed_a, &options) {
+            Ok(v) => v,
+            Err(err) => panic!("compress(A) failed: {err:?}"),
+        };
+        assert!(a_summary.bytes_written > 0);
+
+        let mut compressed_b = Vec::new();
+        let b_summary = match compress(LARGE_SAMPLE, &mut compressed_b, &options) {
+            Ok(v) => v,
+            Err(err) => panic!("compress(B) failed: {err:?}"),
+        };
+        assert!(b_summary.bytes_written > 0);
+
+        let mut concatenated = Vec::with_capacity(compressed_a.len() + compressed_b.len());
+        concatenated.extend_from_slice(&compressed_a);
+        concatenated.extend_from_slice(&compressed_b);
+
+        // Without CONCATENATED we stop after the first stream.
+        let mut decompressed_single = Vec::new();
+        let single_opts = DecompressionOptions::default();
+        let _ = match decompress(
+            concatenated.as_slice(),
+            &mut decompressed_single,
+            &single_opts,
+        ) {
+            Ok(v) => v,
+            Err(err) => panic!("decompress(single-stream) failed: {err:?}"),
+        };
+        assert_eq!(decompressed_single, SAMPLE);
+
+        // With CONCATENATED we decode both streams.
+        let mut decompressed_all = Vec::new();
+        let concat_opts = DecompressionOptions::default().with_flags(Flags::CONCATENATED);
+        let _ = match decompress(concatenated.as_slice(), &mut decompressed_all, &concat_opts) {
+            Ok(v) => v,
+            Err(err) => panic!("decompress(concatenated) failed: {err:?}"),
+        };
+
+        let mut expected = Vec::with_capacity(SAMPLE.len() + LARGE_SAMPLE.len());
+        expected.extend_from_slice(SAMPLE);
+        expected.extend_from_slice(LARGE_SAMPLE);
+        assert_eq!(decompressed_all, expected);
     }
 }
