@@ -1,4 +1,8 @@
+use std::io::Cursor;
 use std::path::{Path, PathBuf};
+
+use xz_core::options::CompressionOptions;
+use xz_core::pipeline::compress;
 
 use super::*;
 
@@ -579,4 +583,73 @@ fn constants_have_expected_values() {
     assert_eq!(XZ_EXTENSION, "xz");
     assert_eq!(LZMA_EXTENSION, "lzma");
     assert_eq!(DEFAULT_BUFFER_SIZE, 512 * 1024);
+}
+
+fn compress_to_xz_bytes(plain: &[u8]) -> Vec<u8> {
+    let opts = CompressionOptions::default();
+    let mut out = Vec::new();
+    match compress(plain, &mut out, &opts) {
+        Ok(summary) => {
+            assert!(summary.bytes_written > 0);
+        }
+        Err(err) => panic!("compress failed: {err:?}"),
+    }
+    out
+}
+
+/// Default CLI behavior (without `--single-stream`) decodes concatenated `.xz` streams fully.
+#[test]
+fn default_decodes_concatenated_xz_streams() {
+    let plain_a = b"hello from stream A\n";
+    let plain_b = b"and this is stream B\n";
+
+    let xz_a = compress_to_xz_bytes(plain_a);
+    let xz_b = compress_to_xz_bytes(plain_b);
+
+    let mut concatenated = Vec::with_capacity(xz_a.len() + xz_b.len());
+    concatenated.extend_from_slice(&xz_a);
+    concatenated.extend_from_slice(&xz_b);
+
+    let config = CliConfig {
+        single_stream: false, // default, but make it explicit for test clarity
+        ..Default::default()
+    };
+
+    let mut decoded = Vec::new();
+    match decompress_file(Cursor::new(concatenated), &mut decoded, &config) {
+        Ok(()) => {}
+        Err(err) => panic!("decompress_file(default) failed: {err:?}"),
+    }
+
+    let mut expected = Vec::with_capacity(plain_a.len() + plain_b.len());
+    expected.extend_from_slice(plain_a);
+    expected.extend_from_slice(plain_b);
+    assert_eq!(decoded, expected);
+}
+
+/// `--single-stream` stops after the first stream and ignores remaining input without error.
+#[test]
+fn single_stream_ignores_trailing_stream() {
+    let plain_a = b"hello from stream A\n";
+    let plain_b = b"and this is stream B\n";
+
+    let xz_a = compress_to_xz_bytes(plain_a);
+    let xz_b = compress_to_xz_bytes(plain_b);
+
+    let mut concatenated = Vec::with_capacity(xz_a.len() + xz_b.len());
+    concatenated.extend_from_slice(&xz_a);
+    concatenated.extend_from_slice(&xz_b);
+
+    let config = CliConfig {
+        single_stream: true,
+        ..Default::default()
+    };
+
+    let mut decoded = Vec::new();
+    match decompress_file(Cursor::new(concatenated), &mut decoded, &config) {
+        Ok(()) => {}
+        Err(err) => panic!("decompress_file(--single-stream) failed: {err:?}"),
+    }
+
+    assert_eq!(decoded, plain_a);
 }

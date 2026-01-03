@@ -374,8 +374,13 @@ impl Fixture {
 
         if let Some(stdin_bytes) = stdin_bytes {
             if let Some(ref mut stdin) = child.stdin {
-                stdin.write_all(&stdin_bytes).await.unwrap_or_else(|_| {
-                    panic!("failed write to stdin ({} bytes)", stdin_bytes.len())
+                stdin.write_all(&stdin_bytes).await.unwrap_or_else(|err| {
+                    // Some commands intentionally exit early (e.g. rejecting stdin).
+                    // In such cases, the child may close its stdin before we finish writing.
+                    if err.kind() == std::io::ErrorKind::BrokenPipe {
+                        return;
+                    }
+                    panic!("failed write to stdin ({} bytes): {err}", stdin_bytes.len());
                 });
             }
         }
