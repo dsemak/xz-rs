@@ -40,7 +40,7 @@ impl BinaryType {
                 let bin_env = format!("CARGO_BIN_EXE_{name}");
                 let path = Self::locate_cargo_binary(name, &bin_env).unwrap_or_else(|| {
                     panic!(
-                        "Binary '{name}' not found. Set '{bin_env}' or build the project binaries."
+                        "Binary '{name}' not found. Set '{bin_env}' or build the project binaries.",
                     )
                 });
                 path.to_string_lossy().into_owned()
@@ -306,6 +306,11 @@ impl Fixture {
     /// Get compressed path (adds .xz extension)
     pub fn compressed_path(&self, name: &str) -> String {
         format!("{}.xz", self.path(name))
+    }
+
+    /// Get compressed path using the legacy `.lzma` extension.
+    pub fn lzma_path(&self, name: &str) -> String {
+        format!("{}.lzma", self.path(name))
     }
 
     /// Remove a file from the fixture

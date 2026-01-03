@@ -157,6 +157,20 @@ Key knobs:
 - `Threading` intelligently caps worker counts to avoid starving the host,
 while `DecodeMode` lets you pick between XZ, legacy LZMA, or auto-detection.
 
+## Legacy `.lzma` Support
+
+`xz-core` supports decoding and encoding the legacy `.lzma` (LZMA_Alone) container via:
+
+- `EncodeFormat::Lzma` for compression (LZMA1 only)
+- `DecodeMode::Lzma` for decompression
+- `DecodeMode::Auto` for auto-detection (XZ or `.lzma`, single-threaded only)
+
+Limitations of the `.lzma` container:
+
+- No integrity checks (CRC/SHA) are stored in the container.
+- Always single-threaded (threading is not supported for `.lzma`).
+- Custom filter chains are not supported; the container always uses LZMA1.
+
 ## Memory & Buffer Management
 
 The pipeline allocates scratch buffers via `Buffer`.

@@ -95,6 +95,31 @@ pub(crate) fn lzma_alone_decoder(memlimit: u64, stream: &mut Stream) -> Result<(
     result_from_lzma_ret(ret, ())
 }
 
+/// Populate `lzma_options_lzma` from an `xz(1)`-compatible preset via `lzma_lzma_preset`.
+pub(crate) fn lzma_lzma_preset(
+    options: &mut liblzma_sys::lzma_options_lzma,
+    preset: u32,
+) -> Result<()> {
+    // SAFETY: `options` is a valid pointer; liblzma writes the output in place.
+    let failed = unsafe { liblzma_sys::lzma_lzma_preset(options, preset) };
+    if failed != 0 {
+        return Err(Error::OptionsError);
+    }
+    Ok(())
+}
+
+/// Initialise a legacy `.lzma` encoder via `lzma_alone_encoder`.
+pub(crate) fn lzma_alone_encoder(
+    options: &liblzma_sys::lzma_options_lzma,
+    stream: &mut Stream,
+) -> Result<()> {
+    // SAFETY:
+    // - The stream is valid and not already initialized.
+    // - `options` is a valid pointer to an initialized options struct.
+    let ret = unsafe { liblzma_sys::lzma_alone_encoder(stream.lzma_stream(), options) };
+    result_from_lzma_ret(ret, ())
+}
+
 /// Initialise an index decoder with `lzma_index_decoder`.
 ///
 /// The index will be made available through the `index_ptr` after decoding completes.

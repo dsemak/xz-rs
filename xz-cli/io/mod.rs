@@ -6,7 +6,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use crate::config::{CliConfig, OperationMode, DEFAULT_BUFFER_SIZE, LZMA_EXTENSION, XZ_EXTENSION};
-use crate::error::{DiagnosticCause, Error, Result, Warning};
+use crate::error::{DiagnosticCause, Error, IoErrorNoCode, Result, Warning};
 
 mod sparse_writer;
 
@@ -60,15 +60,14 @@ pub fn generate_output_filename(
     input: &Path,
     mode: OperationMode,
     suffix: Option<&str>,
+    default_extension: &str,
     force: bool,
 ) -> Result<PathBuf> {
     match mode {
         OperationMode::Compress => {
             let mut output = input.to_path_buf();
             // Strip leading dot from suffix if present
-            let extension = suffix
-                .map(|s| s.strip_prefix('.').unwrap_or(s))
-                .unwrap_or(XZ_EXTENSION);
+            let extension = suffix.map_or(default_extension, |s| s.strip_prefix('.').unwrap_or(s));
 
             // Check if the file already has the target suffix (unless force is enabled)
             if !force {
@@ -170,8 +169,7 @@ pub fn open_input(path: &str) -> Result<Box<dyn io::Read>> {
     } else {
         let file = File::open(path).map_err(|source| {
             DiagnosticCause::from(Error::OpenInput {
-                path: path.to_string(),
-                source,
+                source: IoErrorNoCode::new(source),
             })
         })?;
         Ok(Box::new(io::BufReader::with_capacity(
@@ -220,7 +218,7 @@ pub fn open_output(path: Option<&Path>, config: &CliConfig) -> Result<Box<dyn io
         let file = File::create(path).map_err(|source| {
             DiagnosticCause::from(Error::CreateOutput {
                 path: path.to_path_buf(),
-                source,
+                source: IoErrorNoCode::new(source),
             })
         })?;
 
@@ -255,7 +253,7 @@ pub(crate) fn open_output_file(path: &Path, config: &CliConfig) -> Result<File> 
     File::create(path).map_err(|source| {
         DiagnosticCause::from(Error::CreateOutput {
             path: path.to_path_buf(),
-            source,
+            source: IoErrorNoCode::new(source),
         })
     })
 }

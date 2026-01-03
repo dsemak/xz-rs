@@ -8,6 +8,7 @@ mod config;
 mod error;
 mod format;
 mod io;
+mod lzma1;
 mod operations;
 mod process;
 mod utils;
@@ -17,8 +18,8 @@ mod tests;
 
 pub use config::{CliConfig, OperationMode, DEFAULT_BUFFER_SIZE, LZMA_EXTENSION, XZ_EXTENSION};
 pub use error::{
-    format_diagnostic_for_stderr, Diagnostic, DiagnosticCause, Error, ExitStatus, Report, Result,
-    Severity, Warning,
+    format_diagnostic_for_stderr, Diagnostic, DiagnosticCause, Error, ExitStatus, IoErrorNoCode,
+    Report, Result, Severity, Warning,
 };
 pub use io::{generate_output_filename, has_compression_extension, open_input, open_output};
 pub use operations::{compress_file, decompress_file};

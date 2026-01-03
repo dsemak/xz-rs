@@ -5,6 +5,47 @@ use std::path::PathBuf;
 
 use thiserror::Error;
 
+/// Formats `std::io::Error` similar to `strerror(3)` output, without the trailing
+/// `"(os error N)"` suffix that Rust includes by default.
+#[derive(Debug)]
+pub struct IoErrorNoCode {
+    inner: io::Error,
+}
+
+impl IoErrorNoCode {
+    /// Creates a new wrapper around an I/O error.
+    pub fn new(inner: io::Error) -> Self {
+        Self { inner }
+    }
+
+    /// Returns the underlying I/O error kind.
+    pub fn kind(&self) -> io::ErrorKind {
+        self.inner.kind()
+    }
+}
+
+impl std::fmt::Display for IoErrorNoCode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut msg = self.inner.to_string();
+
+        // Rust formats OS errors as "X (os error N)" which doesn't match upstream xz tools.
+        // Strip that suffix when present.
+        if msg.ends_with(')') {
+            if let Some(idx) = msg.rfind(" (os error ") {
+                msg.truncate(idx);
+            }
+        }
+
+        write!(f, "{msg}")
+    }
+}
+
+impl std::error::Error for IoErrorNoCode {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.inner)
+    }
+}
+
 /// Severity of a CLI diagnostic.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Severity {
@@ -150,14 +191,14 @@ pub fn format_diagnostic_for_stderr(quiet: u8, diagnostic: &Diagnostic) -> Optio
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum Warning {
     /// Input file lacks recognized compression extension
-    #[error("{}: Filename has an unknown suffix, skipping", path.display())]
+    #[error("Filename has an unknown suffix, skipping")]
     InvalidExtension {
         /// Path to the input file
         path: PathBuf,
     },
 
     /// Input file already has the target suffix
-    #[error("{}: Already has `{}` suffix, skipping", path.display(), suffix)]
+    #[error("Already has `{}` suffix, skipping", suffix)]
     AlreadyHasSuffix {
         /// Path to the input file
         path: PathBuf,
@@ -170,13 +211,11 @@ pub enum Warning {
 #[derive(Debug, Error)]
 pub enum Error {
     /// Failed to open input file
-    #[error("{path}: {source}")]
+    #[error("{source}")]
     OpenInput {
-        /// Path to the input file
-        path: String,
         /// Underlying I/O error
         #[source]
-        source: io::Error,
+        source: IoErrorNoCode,
     },
 
     /// Failed to create output file
@@ -186,7 +225,7 @@ pub enum Error {
         path: PathBuf,
         /// Underlying I/O error
         #[source]
-        source: io::Error,
+        source: IoErrorNoCode,
     },
 
     /// Output file already exists
@@ -197,26 +236,22 @@ pub enum Error {
     },
 
     /// Cannot determine output filename
-    #[error("{}: Cannot determine output filename", path.display())]
+    #[error("Cannot determine output filename")]
     InvalidOutputFilename {
         /// Path to the input file
         path: PathBuf,
     },
 
     /// Compression operation failed
-    #[error("{path}: Compressed data is corrupt")]
+    #[error("{message}")]
     Compression {
-        /// Path to the file being compressed
-        path: String,
         /// Error message from liblzma
         message: String,
     },
 
     /// Decompression operation failed
-    #[error("{path}: Compressed data is corrupt")]
+    #[error("{message}")]
     Decompression {
-        /// Path to the file being decompressed
-        path: String,
         /// Error message from liblzma
         message: String,
     },
@@ -228,6 +263,13 @@ pub enum Error {
         level: u32,
     },
 
+    /// Invalid option combination or value.
+    #[error("{message}")]
+    InvalidOption {
+        /// Error message describing why the option is invalid.
+        message: String,
+    },
+
     /// Thread count too large
     #[error("The number of threads must not exceed {}", u32::MAX)]
     InvalidThreadCount {
@@ -236,13 +278,11 @@ pub enum Error {
     },
 
     /// Failed to remove input file
-    #[error("{path}: Cannot remove: {source}")]
+    #[error("Cannot remove: {source}")]
     RemoveFile {
-        /// Path to the file
-        path: String,
         /// Underlying I/O error
         #[source]
-        source: io::Error,
+        source: IoErrorNoCode,
     },
 
     /// Invalid memory limit format
@@ -267,7 +307,7 @@ pub enum Error {
     WriteOutput {
         /// Underlying I/O error.
         #[source]
-        source: io::Error,
+        source: IoErrorNoCode,
     },
 }
 

@@ -1,3 +1,6 @@
+use std::fs::OpenOptions;
+use std::io::Write;
+
 use crate::add_test;
 use crate::common::{generate_random_data, BinaryType, Fixture};
 use crate::{KB, MB};
@@ -154,6 +157,44 @@ add_test!(truncated_file, async {
     // xzcat should fail
     let output = fixture.run_cargo("xzcat", &[&compressed_path]).await;
     assert!(!output.status.success());
+});
+
+// Trailing garbage is strict by default; `--single-stream` makes it tolerant.
+add_test!(trailing_garbage, async {
+    const FILE_NAME: &str = "garbage_xz.txt";
+
+    let data = b"test";
+    let mut fixture = Fixture::with_file(FILE_NAME, data);
+
+    let file_path = fixture.path(FILE_NAME);
+    let xz_path = fixture.compressed_path(FILE_NAME);
+
+    // Produce a valid .xz file first.
+    let out = fixture.run_cargo("xz", &["-k", &file_path]).await;
+    assert!(out.status.success(), "xz failed: {}", out.stderr);
+
+    // Append trailing garbage.
+    let mut f = OpenOptions::new()
+        .append(true)
+        .open(&xz_path)
+        .expect("open .xz for append");
+    f.write_all(b"TRAILING_GARBAGE").expect("append garbage");
+    drop(f);
+
+    // Strict by default: should fail.
+    let out = fixture.run_cargo("xzcat", &[&xz_path]).await;
+    assert!(!out.status.success(), "xzcat unexpectedly succeeded");
+
+    // Tolerant with --single-stream: should ignore the tail and succeed.
+    let out = fixture
+        .run_cargo("xzcat", &["--single-stream", &xz_path])
+        .await;
+    assert!(
+        out.status.success(),
+        "xzcat --single-stream failed: {}",
+        out.stderr
+    );
+    assert!(out.stdout_raw == data);
 });
 
 // Test xzcat with uncompressed file having .xz extension

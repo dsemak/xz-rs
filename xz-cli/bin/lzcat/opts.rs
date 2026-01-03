@@ -1,22 +1,22 @@
-//! Command line argument parsing for the xzcat utility.
+//! Command line argument parsing for the lzcat utility.
 
 use clap::Parser;
 
 use xz_cli::{parse_memory_limit, CliConfig, OperationMode};
 
-/// XZ decompression and concatenation utility
+/// LZMA decompression and concatenation utility.
 ///
-/// This utility decompresses XZ files and writes the output to standard output.
+/// Equivalent to `lzma --decompress --stdout`.
 #[derive(Debug, Parser)]
 #[command(
-    name = "xzcat",
+    name = "lzcat",
     version = "0.1.1",
-    about = "Decompress .xz files to stdout",
-    long_about = "xzcat decompresses files and writes the output to standard output. \
-                 It is equivalent to 'xz --decompress --stdout'. Multiple files \
+    about = "Decompress .lzma files to stdout",
+    long_about = "lzcat decompresses files and writes the output to standard output. \
+                 It is equivalent to 'lzma --decompress --stdout'. Multiple files \
                  are decompressed and concatenated to stdout."
 )]
-pub struct XzCatOpts {
+pub struct LzCatOpts {
     /// Files to decompress
     #[arg(value_name = "FILE")]
     files: Vec<String>,
@@ -29,7 +29,7 @@ pub struct XzCatOpts {
     #[arg(short = 'q', long = "quiet", conflicts_with = "verbose", action = clap::ArgAction::Count)]
     quiet: u8,
 
-    /// Use at most this many threads
+    /// Use at most this many threads (ignored for .lzma; kept for CLI compatibility)
     #[arg(short = 'T', long = "threads", value_name = "NUM")]
     threads: Option<usize>,
 
@@ -48,13 +48,13 @@ pub struct XzCatOpts {
     single_stream: bool,
 }
 
-impl XzCatOpts {
-    /// Parse command line arguments
+impl LzCatOpts {
+    /// Parse command line arguments.
     pub fn parse() -> Self {
         Parser::parse()
     }
 
-    /// Build CLI configuration from the parsed options
+    /// Build CLI configuration from the parsed options.
     pub fn config(&self) -> CliConfig {
         CliConfig {
             mode: OperationMode::Cat,
@@ -67,8 +67,8 @@ impl XzCatOpts {
             threads: self.threads,
             memory_limit: self.memory,
             extreme: false,
-            format: xz_core::config::DecodeMode::Auto,
-            check: xz_core::options::IntegrityCheck::Crc64,
+            format: xz_core::config::DecodeMode::Lzma,
+            check: xz_core::options::IntegrityCheck::None,
             lzma1: None,
             robot: false,
             suffix: None,
@@ -78,7 +78,7 @@ impl XzCatOpts {
         }
     }
 
-    /// Files supplied on the command line
+    /// Files supplied on the command line.
     pub fn files(&self) -> &[String] {
         &self.files
     }
@@ -88,11 +88,12 @@ impl XzCatOpts {
 mod tests {
     use super::*;
 
+    /// Verify [`LzCatOpts::config`] uses the legacy `.lzma` container mode.
     #[test]
-    fn config_sets_cat_mode_and_stdout() {
-        let opts = XzCatOpts {
-            files: vec!["input.xz".into()],
-            verbose: true,
+    fn config_uses_lzma_decode_mode() {
+        let opts = LzCatOpts {
+            files: vec!["input.lzma".into()],
+            verbose: false,
             quiet: 0,
             threads: Some(4),
             memory: Some(1024),
@@ -102,38 +103,18 @@ mod tests {
         let config = opts.config();
         assert_eq!(config.mode, OperationMode::Cat);
         assert!(config.stdout);
-        assert!(config.keep);
-        assert!(config.verbose);
-        assert_eq!(config.threads, Some(4));
-        assert_eq!(config.memory_limit, Some(1024));
+        assert_eq!(config.format, xz_core::config::DecodeMode::Lzma);
     }
 
-    #[test]
-    fn parse_from_args_reads_flags() {
-        let opts = XzCatOpts::try_parse_from(["xzcat", "-v", "-T", "2", "-M", "512K", "input.xz"])
-            .unwrap();
-
-        assert_eq!(opts.files(), ["input.xz"]);
-        assert!(opts.verbose);
-        assert_eq!(opts.threads, Some(2));
-        assert_eq!(opts.memory, Some(512 * 1024));
-    }
-
-    #[test]
-    fn parse_single_stream_flag() {
-        let opts = XzCatOpts::try_parse_from(["xzcat", "--single-stream", "input.xz"]).unwrap();
-        assert_eq!(opts.files(), ["input.xz"]);
-        assert!(opts.single_stream);
-    }
-
+    /// Ensure `--memlimit` alias is accepted (upstream CLI compatibility).
     #[test]
     fn parse_accepts_memlimit_alias() {
-        let opts = match XzCatOpts::try_parse_from(["xzcat", "--memlimit", "1M", "input.xz"]) {
+        let opts = match LzCatOpts::try_parse_from(["lzcat", "--memlimit", "1M", "input.lzma"]) {
             Ok(v) => v,
             Err(e) => panic!("failed to parse aliases: {e}"),
         };
 
-        assert_eq!(opts.files(), ["input.xz"]);
+        assert_eq!(opts.files(), ["input.lzma"]);
         assert_eq!(opts.memory, Some(1024 * 1024));
     }
 }

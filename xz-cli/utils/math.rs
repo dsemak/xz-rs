@@ -11,9 +11,6 @@ pub(crate) fn ratio_fraction(compressed: u64, uncompressed: u64) -> f64 {
     let scaled = compressed.saturating_mul(1_000_000);
     let ratio_micro = (scaled + (uncompressed / 2)) / uncompressed;
 
-    let ratio_micro_u32 = match u32::try_from(ratio_micro) {
-        Ok(v) => v,
-        Err(_) => u32::MAX,
-    };
+    let ratio_micro_u32 = u32::try_from(ratio_micro).unwrap_or(u32::MAX);
     f64::from(ratio_micro_u32) / 1_000_000.0
 }

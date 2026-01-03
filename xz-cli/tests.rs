@@ -90,11 +90,15 @@ fn has_compression_extension_no_extension() {
 #[test]
 fn generate_output_filename_compress_basic() {
     let input = Path::new("test.txt");
-    let output = generate_output_filename(input, OperationMode::Compress, None, false).unwrap();
+    let output =
+        generate_output_filename(input, OperationMode::Compress, None, XZ_EXTENSION, false)
+            .unwrap();
     assert_eq!(output, PathBuf::from("test.txt.xz"));
 
     let input = Path::new("test");
-    let output = generate_output_filename(input, OperationMode::Compress, None, false).unwrap();
+    let output =
+        generate_output_filename(input, OperationMode::Compress, None, XZ_EXTENSION, false)
+            .unwrap();
     assert_eq!(output, PathBuf::from("test.xz"));
 }
 
@@ -102,7 +106,9 @@ fn generate_output_filename_compress_basic() {
 #[test]
 fn generate_output_filename_compress_double_extension() {
     let input = Path::new("file.tar");
-    let output = generate_output_filename(input, OperationMode::Compress, None, false).unwrap();
+    let output =
+        generate_output_filename(input, OperationMode::Compress, None, XZ_EXTENSION, false)
+            .unwrap();
     assert_eq!(output, PathBuf::from("file.tar.xz"));
 }
 
@@ -110,7 +116,9 @@ fn generate_output_filename_compress_double_extension() {
 #[test]
 fn generate_output_filename_compress_with_path() {
     let input = Path::new("/path/to/file.txt");
-    let output = generate_output_filename(input, OperationMode::Compress, None, false).unwrap();
+    let output =
+        generate_output_filename(input, OperationMode::Compress, None, XZ_EXTENSION, false)
+            .unwrap();
     assert_eq!(output, PathBuf::from("/path/to/file.txt.xz"));
 }
 
@@ -118,11 +126,15 @@ fn generate_output_filename_compress_with_path() {
 #[test]
 fn generate_output_filename_decompress_basic() {
     let input = Path::new("test.txt.xz");
-    let output = generate_output_filename(input, OperationMode::Decompress, None, false).unwrap();
+    let output =
+        generate_output_filename(input, OperationMode::Decompress, None, XZ_EXTENSION, false)
+            .unwrap();
     assert_eq!(output, PathBuf::from("test.txt"));
 
     let input = Path::new("test.lzma");
-    let output = generate_output_filename(input, OperationMode::Decompress, None, false).unwrap();
+    let output =
+        generate_output_filename(input, OperationMode::Decompress, None, XZ_EXTENSION, false)
+            .unwrap();
     assert_eq!(output, PathBuf::from("test"));
 }
 
@@ -130,7 +142,9 @@ fn generate_output_filename_decompress_basic() {
 #[test]
 fn generate_output_filename_decompress_with_path() {
     let input = Path::new("/path/to/archive.xz");
-    let output = generate_output_filename(input, OperationMode::Decompress, None, false).unwrap();
+    let output =
+        generate_output_filename(input, OperationMode::Decompress, None, XZ_EXTENSION, false)
+            .unwrap();
     assert_eq!(output, PathBuf::from("/path/to/archive"));
 }
 
@@ -138,7 +152,8 @@ fn generate_output_filename_decompress_with_path() {
 #[test]
 fn generate_output_filename_cat_mode() {
     let input = Path::new("test.txt.xz");
-    let output = generate_output_filename(input, OperationMode::Cat, None, false).unwrap();
+    let output =
+        generate_output_filename(input, OperationMode::Cat, None, XZ_EXTENSION, false).unwrap();
     assert_eq!(output, PathBuf::from("test.txt"));
 }
 
@@ -146,7 +161,8 @@ fn generate_output_filename_cat_mode() {
 #[test]
 fn generate_output_filename_test_mode() {
     let input = Path::new("test.xz");
-    let output = generate_output_filename(input, OperationMode::Test, None, false).unwrap();
+    let output =
+        generate_output_filename(input, OperationMode::Test, None, XZ_EXTENSION, false).unwrap();
     assert_eq!(output, PathBuf::new());
 }
 
@@ -154,7 +170,8 @@ fn generate_output_filename_test_mode() {
 #[test]
 fn generate_output_filename_decompress_invalid_extension() {
     let input = Path::new("test.txt");
-    let result = generate_output_filename(input, OperationMode::Decompress, None, false);
+    let result =
+        generate_output_filename(input, OperationMode::Decompress, None, XZ_EXTENSION, false);
     assert!(result.is_err());
     assert!(matches!(
         result.unwrap_err(),
@@ -166,7 +183,8 @@ fn generate_output_filename_decompress_invalid_extension() {
 #[test]
 fn generate_output_filename_decompress_no_extension() {
     let input = Path::new("test");
-    let result = generate_output_filename(input, OperationMode::Decompress, None, false);
+    let result =
+        generate_output_filename(input, OperationMode::Decompress, None, XZ_EXTENSION, false);
     assert!(result.is_err());
 }
 
@@ -174,13 +192,25 @@ fn generate_output_filename_decompress_no_extension() {
 #[test]
 fn generate_output_filename_compress_custom_suffix() {
     let input = Path::new("test.txt");
-    let output =
-        generate_output_filename(input, OperationMode::Compress, Some("myext"), false).unwrap();
+    let output = generate_output_filename(
+        input,
+        OperationMode::Compress,
+        Some("myext"),
+        XZ_EXTENSION,
+        false,
+    )
+    .unwrap();
     assert_eq!(output, PathBuf::from("test.txt.myext"));
 
     let input = Path::new("file");
-    let output =
-        generate_output_filename(input, OperationMode::Compress, Some("gz"), false).unwrap();
+    let output = generate_output_filename(
+        input,
+        OperationMode::Compress,
+        Some("gz"),
+        XZ_EXTENSION,
+        false,
+    )
+    .unwrap();
     assert_eq!(output, PathBuf::from("file.gz"));
 }
 
@@ -188,8 +218,14 @@ fn generate_output_filename_compress_custom_suffix() {
 #[test]
 fn generate_output_filename_compress_custom_suffix_with_dot() {
     let input = Path::new("test.txt");
-    let output =
-        generate_output_filename(input, OperationMode::Compress, Some(".custom"), false).unwrap();
+    let output = generate_output_filename(
+        input,
+        OperationMode::Compress,
+        Some(".custom"),
+        XZ_EXTENSION,
+        false,
+    )
+    .unwrap();
     // Leading dot should be stripped, so we get .custom not ..custom
     assert_eq!(output, PathBuf::from("test.txt.custom"));
 }
@@ -198,13 +234,25 @@ fn generate_output_filename_compress_custom_suffix_with_dot() {
 #[test]
 fn generate_output_filename_decompress_custom_suffix() {
     let input = Path::new("test.txt.myext");
-    let output =
-        generate_output_filename(input, OperationMode::Decompress, Some("myext"), false).unwrap();
+    let output = generate_output_filename(
+        input,
+        OperationMode::Decompress,
+        Some("myext"),
+        XZ_EXTENSION,
+        false,
+    )
+    .unwrap();
     assert_eq!(output, PathBuf::from("test.txt"));
 
     let input = Path::new("file.custom");
-    let output =
-        generate_output_filename(input, OperationMode::Decompress, Some(".custom"), false).unwrap();
+    let output = generate_output_filename(
+        input,
+        OperationMode::Decompress,
+        Some(".custom"),
+        XZ_EXTENSION,
+        false,
+    )
+    .unwrap();
     assert_eq!(output, PathBuf::from("file"));
 }
 
@@ -212,7 +260,13 @@ fn generate_output_filename_decompress_custom_suffix() {
 #[test]
 fn generate_output_filename_decompress_custom_suffix_mismatch() {
     let input = Path::new("test.txt.xz");
-    let result = generate_output_filename(input, OperationMode::Decompress, Some("myext"), false);
+    let result = generate_output_filename(
+        input,
+        OperationMode::Decompress,
+        Some("myext"),
+        XZ_EXTENSION,
+        false,
+    );
     assert!(result.is_err());
     assert!(matches!(
         result,
@@ -224,7 +278,8 @@ fn generate_output_filename_decompress_custom_suffix_mismatch() {
 #[test]
 fn generate_output_filename_compress_already_has_suffix() {
     let input = Path::new("test.txt.xz");
-    let result = generate_output_filename(input, OperationMode::Compress, None, false);
+    let result =
+        generate_output_filename(input, OperationMode::Compress, None, XZ_EXTENSION, false);
     assert!(result.is_err());
     assert!(matches!(
         result,
@@ -232,7 +287,13 @@ fn generate_output_filename_compress_already_has_suffix() {
     ));
 
     let input = Path::new("test.custom");
-    let result = generate_output_filename(input, OperationMode::Compress, Some("custom"), false);
+    let result = generate_output_filename(
+        input,
+        OperationMode::Compress,
+        Some("custom"),
+        XZ_EXTENSION,
+        false,
+    );
     assert!(result.is_err());
     assert!(matches!(
         result,
@@ -240,7 +301,13 @@ fn generate_output_filename_compress_already_has_suffix() {
     ));
 
     let input = Path::new("test.myext");
-    let result = generate_output_filename(input, OperationMode::Compress, Some(".myext"), false);
+    let result = generate_output_filename(
+        input,
+        OperationMode::Compress,
+        Some(".myext"),
+        XZ_EXTENSION,
+        false,
+    );
     assert!(result.is_err());
     assert!(matches!(
         result,
@@ -252,12 +319,19 @@ fn generate_output_filename_compress_already_has_suffix() {
 #[test]
 fn generate_output_filename_compress_force_allows_suffix() {
     let input = Path::new("test.txt.xz");
-    let output = generate_output_filename(input, OperationMode::Compress, None, true).unwrap();
+    let output =
+        generate_output_filename(input, OperationMode::Compress, None, XZ_EXTENSION, true).unwrap();
     assert_eq!(output, PathBuf::from("test.txt.xz.xz"));
 
     let input = Path::new("test.custom");
-    let output =
-        generate_output_filename(input, OperationMode::Compress, Some("custom"), true).unwrap();
+    let output = generate_output_filename(
+        input,
+        OperationMode::Compress,
+        Some("custom"),
+        XZ_EXTENSION,
+        true,
+    )
+    .unwrap();
     assert_eq!(output, PathBuf::from("test.custom.custom"));
 }
 

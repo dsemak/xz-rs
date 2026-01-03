@@ -41,7 +41,7 @@ mod error;
 mod ffi;
 
 pub use decoder::{Decoder, FileInfoDecoder, IndexDecoder};
-pub use encoder::Encoder;
+pub use encoder::{AloneEncoder, Encoder};
 pub use error::{Error, Result};
 pub use stream::{BlockInfo, Index, IndexEntry, IndexIterMode, IndexIterator, Stream, StreamInfo};
 

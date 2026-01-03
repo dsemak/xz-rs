@@ -2,12 +2,12 @@
 
 use std::io::{Read, Write};
 
-use lzma_safe::{Action, Decoder, Encoder};
+use lzma_safe::{Action, Decoder};
 
 use crate::buffer::Buffer;
 use crate::config::StreamSummary;
 use crate::error::{BackendError, Result};
-use crate::options::{CompressionOptions, DecompressionOptions};
+use crate::options::{BuiltEncoder, CompressionOptions, DecompressionOptions};
 
 /// Compresses data from a reader into a writer using the provided options.
 ///
@@ -228,7 +228,7 @@ where
 /// * `Ok(())` if the encoder finished successfully
 /// * `Err(BackendError::BufError)` if the encoder gets stuck in an infinite loop
 fn finish_encoder_sync<W: Write>(
-    encoder: &mut Encoder,
+    encoder: &mut BuiltEncoder,
     writer: &mut W,
     output: &mut [u8],
     total_out: &mut u64,

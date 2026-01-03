@@ -2,10 +2,12 @@
 
 mod check;
 mod filter;
+mod lzma1;
 mod present;
 
 pub use check::IntegrityCheck;
 pub use filter::{FilterConfig, FilterOptions, FilterType, OwnedFilterOptions, RawFilters};
+pub use lzma1::{Lzma1Options, MatchFinder, Mode};
 pub use present::Compression;
 
 /// Options forwarded to `lzma_stream_encoder_mt`.

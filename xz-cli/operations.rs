@@ -4,15 +4,153 @@ use std::fs::File;
 use std::io;
 
 use xz_core::{
+    config::EncodeFormat,
     file_info,
+    options::lzma1::Lzma1Options,
     options::{Compression, CompressionOptions, DecompressionOptions, Flags},
     pipeline::{compress, decompress},
-    ratio,
+    ratio, Error as CoreError,
 };
 
 use crate::config::CliConfig;
-use crate::error::{DiagnosticCause, Error, Result};
+use crate::error::{DiagnosticCause, Error, IoErrorNoCode, Result};
 use crate::format::list::{self, ListOutputContext, ListSummary};
+use crate::lzma1::parse_lzma1_options;
+
+/// Resolve the output container format for compression.
+fn resolve_encode_format(config: &CliConfig) -> EncodeFormat {
+    if config.format == xz_core::config::DecodeMode::Lzma {
+        return EncodeFormat::Lzma;
+    }
+    EncodeFormat::Xz
+}
+
+/// Returns a human-readable error message corresponding to a `CoreError`.
+fn xz_message_from_core_error(err: &CoreError) -> String {
+    match err {
+        CoreError::Backend(backend) => backend.xz_message().to_string(),
+        CoreError::InvalidOption(message) => message.clone(),
+        _ => err.to_string(),
+    }
+}
+
+/// Compute the effective compression level, applying `--extreme` when requested.
+fn resolve_compression_level(config: &CliConfig) -> Result<Compression> {
+    // Extreme is a modifier that applies to the selected preset level, not a separate level.
+    match (config.level, config.extreme) {
+        (Some(level), true) => {
+            let level_u8 = u8::try_from(level)
+                .map_err(|_| DiagnosticCause::from(Error::InvalidCompressionLevel { level }))?;
+            Ok(Compression::Extreme(level_u8))
+        }
+        (Some(level), false) => Compression::try_from(level)
+            .map_err(|_| DiagnosticCause::from(Error::InvalidCompressionLevel { level })),
+        (None, true) => {
+            let preset = Compression::default().to_preset();
+            // Invariant: `Compression::to_preset()` returns a valid xz preset level (`0..=9`).
+            let preset_u8 = u8::try_from(preset).map_err(|_| {
+                DiagnosticCause::from(Error::InvalidOption {
+                    message: format!(
+                        "internal error: default compression preset must fit into u8 (got {preset})"
+                    ),
+                })
+            })?;
+            Ok(Compression::Extreme(preset_u8))
+        }
+        (None, false) => Ok(Compression::default()),
+    }
+}
+
+/// Apply `--lzma1` overrides to compression options when encoding the `.lzma` container.
+fn apply_lzma1_overrides(
+    mut options: CompressionOptions,
+    config: &CliConfig,
+    encode_format: EncodeFormat,
+    compression_level: Compression,
+) -> Result<CompressionOptions> {
+    let Some(raw_lzma1) = config.lzma1.as_deref() else {
+        return Ok(options);
+    };
+
+    if encode_format != EncodeFormat::Lzma {
+        return Err(DiagnosticCause::from(Error::InvalidOption {
+            message: "--lzma1 is only supported with --format=lzma".into(),
+        }));
+    }
+
+    let parsed = parse_lzma1_options(raw_lzma1).map_err(DiagnosticCause::from)?;
+
+    let base_preset = parsed.preset.unwrap_or(compression_level);
+    let mut lzma1 = Lzma1Options::from_preset(base_preset).map_err(|e| {
+        DiagnosticCause::from(Error::InvalidOption {
+            message: format!("unable to apply --lzma1 preset: {e}"),
+        })
+    })?;
+
+    if let Some(dict) = parsed.dict_size {
+        lzma1 = lzma1.with_dict_size(dict);
+    }
+    if let Some(lc) = parsed.lc {
+        lzma1 = lzma1.with_lc(lc);
+    }
+    if let Some(lp) = parsed.lp {
+        lzma1 = lzma1.with_lp(lp);
+    }
+    if let Some(pb) = parsed.pb {
+        lzma1 = lzma1.with_pb(pb);
+    }
+    if let Some(mode) = parsed.mode {
+        lzma1 = lzma1.with_mode(mode);
+    }
+    if let Some(nice) = parsed.nice_len {
+        lzma1 = lzma1.with_nice_len(nice);
+    }
+    if let Some(mf) = parsed.mf {
+        lzma1 = lzma1.with_match_finder(mf);
+    }
+    if let Some(depth) = parsed.depth {
+        lzma1 = lzma1.with_depth(depth);
+    }
+
+    options = options.with_lzma1_options(Some(lzma1));
+    Ok(options)
+}
+
+/// Apply `--threads` to compression options when supported by the container format.
+fn apply_threads_for_compression(
+    mut options: CompressionOptions,
+    config: &CliConfig,
+    encode_format: EncodeFormat,
+) -> Result<CompressionOptions> {
+    let Some(threads) = config.threads else {
+        return Ok(options);
+    };
+
+    if encode_format == EncodeFormat::Lzma {
+        // `.lzma` is always single-threaded. Keep CLI compatibility by accepting `--threads`
+        // but ignoring it for this container format.
+        return Ok(options);
+    }
+
+    let thread_count = u32::try_from(threads)
+        .map_err(|_| DiagnosticCause::from(Error::InvalidThreadCount { count: threads }))?;
+    options = options.with_threads(xz_core::Threading::Exact(thread_count));
+    Ok(options)
+}
+
+/// Emit verbose/robot output for a completed compression operation.
+fn emit_compress_summary(config: &CliConfig, bytes_read: u64, bytes_written: u64) {
+    if !(config.verbose || config.robot) {
+        return;
+    }
+
+    let ratio = ratio(bytes_written, bytes_read);
+    if config.robot {
+        println!("{bytes_read} {bytes_written} {ratio:.1}");
+    } else {
+        eprintln!("Compressed {bytes_read} bytes to {bytes_written} bytes ({ratio:.1}% ratio)");
+    }
+}
 
 /// Compresses data from an input reader to an output writer.
 ///
@@ -47,67 +185,24 @@ pub fn compress_file(
     mut output: impl io::Write,
     config: &CliConfig,
 ) -> Result<()> {
-    let mut options = CompressionOptions::default();
+    let encode_format = resolve_encode_format(config);
 
-    // Determine the compression level and apply extreme mode if enabled
-    //
-    // Extreme is a modifier that applies to the selected preset level,
-    // not a separate level.
-    let compression_level = match (config.level, config.extreme) {
-        (Some(level), true) => {
-            let level_conv = u8::try_from(level)
-                .map_err(|_| DiagnosticCause::from(Error::InvalidCompressionLevel { level }))?;
-            if level_conv > 9 {
-                return Err(DiagnosticCause::from(Error::InvalidCompressionLevel {
-                    level,
-                }));
-            }
-            Compression::Extreme(level_conv)
-        }
-        (Some(level), false) => Compression::try_from(level)
-            .map_err(|_| DiagnosticCause::from(Error::InvalidCompressionLevel { level }))?,
-        (None, true) => {
-            let level = Compression::default();
-            Compression::Extreme(u8::try_from(level.to_preset()).unwrap())
-        }
-        (None, false) => Compression::default(),
-    };
+    let compression_level = resolve_compression_level(config)?;
 
-    options = options.with_level(compression_level);
-
-    // Set thread count if specified
-    if let Some(threads) = config.threads {
-        let thread_count = u32::try_from(threads)
-            .map_err(|_| DiagnosticCause::from(Error::InvalidThreadCount { count: threads }))?;
-        options = options.with_threads(xz_core::Threading::Exact(thread_count));
-    }
+    let options = CompressionOptions::default()
+        .with_format(encode_format)
+        .with_check(config.check)
+        .with_level(compression_level);
+    let options = apply_lzma1_overrides(options, config, encode_format, compression_level)?;
+    let options = apply_threads_for_compression(options, config, encode_format)?;
 
     // Perform compression and handle errors
     let summary = compress(&mut input, &mut output, &options).map_err(|e| {
-        DiagnosticCause::from(Error::Compression {
-            path: "(input)".to_string(),
-            message: e.to_string(),
-        })
+        let message = xz_message_from_core_error(&e);
+        DiagnosticCause::from(Error::Compression { message })
     })?;
 
-    // Print output if verbose or robot mode is enabled
-    if config.verbose || config.robot {
-        let ratio = ratio(summary.bytes_written, summary.bytes_read);
-
-        if config.robot {
-            // Machine-readable output for robot mode
-            println!(
-                "{} {} {:.1}",
-                summary.bytes_read, summary.bytes_written, ratio
-            );
-        } else {
-            // Human-readable output for verbose mode
-            eprintln!(
-                "Compressed {} bytes to {} bytes ({:.1}% ratio)",
-                summary.bytes_read, summary.bytes_written, ratio
-            );
-        }
-    }
+    emit_compress_summary(config, summary.bytes_read, summary.bytes_written);
 
     Ok(())
 }
@@ -145,9 +240,11 @@ pub fn decompress_file(
 
     // Set thread count if specified
     if let Some(threads) = config.threads {
-        let thread_count = u32::try_from(threads)
-            .map_err(|_| DiagnosticCause::from(Error::InvalidThreadCount { count: threads }))?;
-        options = options.with_threads(xz_core::Threading::Exact(thread_count));
+        if config.format != xz_core::config::DecodeMode::Lzma {
+            let thread_count = u32::try_from(threads)
+                .map_err(|_| DiagnosticCause::from(Error::InvalidThreadCount { count: threads }))?;
+            options = options.with_threads(xz_core::Threading::Exact(thread_count));
+        }
     }
 
     // Set memory limit if specified
@@ -180,10 +277,8 @@ pub fn decompress_file(
 
     // Perform decompression and handle errors
     let summary = decompress(&mut input, &mut output, &options).map_err(|e| {
-        DiagnosticCause::from(Error::Decompression {
-            path: "(input)".to_string(),
-            message: e.to_string(),
-        })
+        let message = xz_message_from_core_error(&e);
+        DiagnosticCause::from(Error::Decompression { message })
     })?;
 
     // Print output if verbose or robot mode is enabled
@@ -276,8 +371,7 @@ pub(crate) fn list_file_with_context(
 
     let mut file = File::open(input_path).map_err(|source| {
         DiagnosticCause::from(Error::OpenInput {
-            path: input_path.to_string(),
-            source,
+            source: IoErrorNoCode::new(source),
         })
     })?;
 
@@ -313,7 +407,11 @@ pub(crate) fn list_file_with_context(
             info.uncompressed_size(),
             ratio(info.file_size(), info.uncompressed_size())
         )
-        .map_err(|source| DiagnosticCause::from(Error::WriteOutput { source }))?;
+        .map_err(|source| {
+            DiagnosticCause::from(Error::WriteOutput {
+                source: IoErrorNoCode::new(source),
+            })
+        })?;
     } else if config.verbose {
         let streams = info.streams();
         let mut blocks = info.blocks();
