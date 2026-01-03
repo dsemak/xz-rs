@@ -1,7 +1,7 @@
-//! LZMA/XZ decompression and concatenation utility
+//! LZMA decompression and concatenation utility
 //!
-//! This utility decompresses LZMA/XZ files and outputs the result to stdout,
-//! similar to 'zcat' for gzip files. It can handle multiple files and
+//! This utility decompresses `.lzma` files and outputs the result to stdout,
+//! similar to `zcat` for gzip files. It can handle multiple files and
 //! concatenate their decompressed content.
 
 use std::process;

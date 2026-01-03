@@ -79,3 +79,37 @@ impl LzCatOpts {
         &self.files
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Verify [`LzCatOpts::config`] uses the legacy `.lzma` container mode.
+    #[test]
+    fn config_uses_lzma_decode_mode() {
+        let opts = LzCatOpts {
+            files: vec!["input.lzma".into()],
+            verbose: false,
+            quiet: 0,
+            threads: Some(4),
+            memory: Some(1024),
+        };
+
+        let config = opts.config();
+        assert_eq!(config.mode, OperationMode::Cat);
+        assert!(config.stdout);
+        assert_eq!(config.format, xz_core::config::DecodeMode::Lzma);
+    }
+
+    /// Ensure `--memlimit` alias is accepted (upstream CLI compatibility).
+    #[test]
+    fn parse_accepts_memlimit_alias() {
+        let opts = match LzCatOpts::try_parse_from(["lzcat", "--memlimit", "1M", "input.lzma"]) {
+            Ok(v) => v,
+            Err(e) => panic!("failed to parse aliases: {e}"),
+        };
+
+        assert_eq!(opts.files(), ["input.lzma"]);
+        assert_eq!(opts.memory, Some(1024 * 1024));
+    }
+}
