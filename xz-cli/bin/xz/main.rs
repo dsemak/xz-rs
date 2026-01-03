@@ -9,7 +9,7 @@ mod opts;
 
 use opts::XzOpts;
 
-use xz_cli::{argfiles, Diagnostic, DiagnosticCause, Error, Result};
+use xz_cli::{argfiles, Diagnostic, DiagnosticCause, Error, IoErrorNoCode, Result};
 use xz_cli::{format_diagnostic_for_stderr, run_cli};
 
 const PROGRAM_NAME: &str = "xz";
@@ -60,8 +60,7 @@ fn resolve_input_files(opts: &XzOpts) -> Result<Vec<String>> {
         let extra =
             argfiles::read_files(Some(path), argfiles::Delimiter::Line).map_err(|source| {
                 DiagnosticCause::Error(Error::OpenInput {
-                    path: path.to_string(),
-                    source,
+                    source: IoErrorNoCode::new(source),
                 })
             })?;
         files.extend(extra);
@@ -71,8 +70,7 @@ fn resolve_input_files(opts: &XzOpts) -> Result<Vec<String>> {
         let extra =
             argfiles::read_files(Some(path), argfiles::Delimiter::Nul).map_err(|source| {
                 DiagnosticCause::Error(Error::OpenInput {
-                    path: path.to_string(),
-                    source,
+                    source: IoErrorNoCode::new(source),
                 })
             })?;
         files.extend(extra);

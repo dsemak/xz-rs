@@ -4,7 +4,7 @@ use std::io;
 use std::path::PathBuf;
 
 use crate::config::{CliConfig, OperationMode};
-use crate::error::{DiagnosticCause, Error, ExitStatus, Report, Result};
+use crate::error::{DiagnosticCause, Error, ExitStatus, IoErrorNoCode, Report, Result};
 use crate::format::list::{print_list_totals, ListOutputContext, ListSummary};
 use crate::io::{
     generate_output_filename, open_input, open_output, open_output_file, SparseFileWriter,
@@ -39,8 +39,7 @@ pub fn cleanup_input_file(input_path: &str, config: &CliConfig) -> Result<()> {
     if !config.keep && !is_stdin && !config.stdout {
         std::fs::remove_file(input_path).map_err(|source| {
             DiagnosticCause::from(Error::RemoveFile {
-                path: input_path.to_string(),
-                source,
+                source: IoErrorNoCode::new(source),
             })
         })?;
 

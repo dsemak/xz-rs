@@ -59,6 +59,10 @@ pub struct UnlzmaOpts {
     )]
     memory: Option<u64>,
 
+    /// Use custom suffix on compressed files
+    #[arg(short = 'S', long = "suffix", value_name = "SUFFIX")]
+    suffix: Option<String>,
+
     /// Don't create sparse files when decompressing.
     #[arg(long = "no-sparse")]
     no_sparse: bool,
@@ -93,7 +97,7 @@ impl UnlzmaOpts {
             check: xz_core::options::IntegrityCheck::None,
             lzma1: None,
             robot: false,
-            suffix: None,
+            suffix: self.suffix.clone(),
             single_stream: false,
             ignore_check: false,
             sparse: !self.no_sparse,

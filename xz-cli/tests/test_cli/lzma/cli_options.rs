@@ -1,7 +1,8 @@
 use crate::add_test;
 use crate::common::{Fixture, SAMPLE_TEXT};
 
-add_test!(lzma1_options_roundtrip, async {
+// Test `--lzma1` option.
+add_test!(lzma1_option, async {
     const FILE_NAME: &str = "test.txt";
 
     let data = SAMPLE_TEXT.as_bytes();
@@ -12,9 +13,9 @@ add_test!(lzma1_options_roundtrip, async {
 
     let opts = "dict=1MiB,lc=4,lp=0,pb=2,mode=fast,mf=hc4,nice=64,depth=128";
     let output = fixture
-        .run_cargo("xz", &["--format=lzma", "--lzma1", opts, "-k", &file_path])
+        .run_cargo("lzma", &["--lzma1", opts, "-k", &file_path])
         .await;
-    assert!(output.status.success(), "xz failed: {}", output.stderr);
+    assert!(output.status.success(), "lzma failed: {}", output.stderr);
     assert!(fixture.file_exists("test.txt.lzma"));
 
     fixture.remove_file(FILE_NAME);
@@ -24,6 +25,7 @@ add_test!(lzma1_options_roundtrip, async {
     fixture.assert_files(&[FILE_NAME], &[data]);
 });
 
+// Test invalid `--lzma1` option.
 add_test!(lzma1_options_invalid_rejected, async {
     const FILE_NAME: &str = "test.txt";
 
@@ -33,7 +35,7 @@ add_test!(lzma1_options_invalid_rejected, async {
     let file_path = fixture.path(FILE_NAME);
 
     let output = fixture
-        .run_cargo("xz", &["--format=lzma", "--lzma1=lc=9", "-k", &file_path])
+        .run_cargo("lzma", &["--lzma1=lc=9", "-k", &file_path])
         .await;
     assert!(!output.status.success());
     assert!(
@@ -43,33 +45,50 @@ add_test!(lzma1_options_invalid_rejected, async {
     );
 });
 
-add_test!(threads_ignored_for_lzma_tools, async {
+// Test `--threads` / `-T` option (ignored for `.lzma`).
+add_test!(threads_ignored, async {
     const FILE_NAME: &str = "test.txt";
 
     let data = SAMPLE_TEXT.as_bytes();
     let mut fixture = Fixture::with_file(FILE_NAME, data);
 
     let file_path = fixture.path(FILE_NAME);
-    let lzma_path = fixture.lzma_path(FILE_NAME);
 
     // `--threads` is accepted for CLI compatibility but ignored for `.lzma`.
     let output = fixture
         .run_cargo("lzma", &["-T", "4", "-k", &file_path])
         .await;
     assert!(output.status.success(), "lzma failed: {}", output.stderr);
-    assert!(fixture.file_exists("test.txt.lzma"));
+});
 
-    fixture.remove_file(FILE_NAME);
+// Test `--suffix` option.
+add_test!(custom_suffix_option, async {
+    const FILE_NAME: &str = "test.txt";
 
-    // Decompress using unlzma with threads specified (should be ignored and succeed).
-    let output = fixture
-        .run_cargo("unlzma", &["-T", "4", "-k", &lzma_path])
+    let data = SAMPLE_TEXT.as_bytes();
+    let mut fixture = Fixture::with_file(FILE_NAME, data);
+
+    let file_path = fixture.path(FILE_NAME);
+
+    let out = fixture
+        .run_cargo("lzma", &["--suffix=.foo", "-k", &file_path])
         .await;
-    assert!(output.status.success(), "unlzma failed: {}", output.stderr);
-    fixture.assert_files(&[FILE_NAME], &[data]);
+    assert!(out.status.success(), "lzma failed: {}", out.stderr);
+    assert!(fixture.file_exists("test.txt.foo"));
+});
 
-    // Verify lzcat behaves the same way (writes to stdout).
-    let output = fixture.run_cargo("lzcat", &["-T", "4", &lzma_path]).await;
-    assert!(output.status.success(), "lzcat failed: {}", output.stderr);
-    assert!(output.stdout_raw == data);
+// Test `--suffix` option without leading dot.
+add_test!(custom_suffix_without_dot, async {
+    const FILE_NAME: &str = "test.txt";
+
+    let data = SAMPLE_TEXT.as_bytes();
+    let mut fixture = Fixture::with_file(FILE_NAME, data);
+
+    let file_path = fixture.path(FILE_NAME);
+
+    let out = fixture
+        .run_cargo("lzma", &["--suffix=foo", "-k", &file_path])
+        .await;
+    assert!(out.status.success(), "lzma failed: {}", out.stderr);
+    assert!(fixture.file_exists("test.txt.foo"));
 });

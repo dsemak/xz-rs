@@ -378,7 +378,7 @@ impl DecompressionOptions {
     ///
     /// Available modes:
     ///
-    /// - `DecodeMode::Auto`: Automatically detect XZ or LZMA format (single-threaded only)
+    /// - `DecodeMode::Auto`: Automatically detect XZ or legacy `.lzma` format (single-threaded only)
     /// - `DecodeMode::Xz`: Force XZ format parsing (supports multi-threading)
     /// - `DecodeMode::Lzma`: Force LZMA format parsing (single-threaded only)
     #[must_use]

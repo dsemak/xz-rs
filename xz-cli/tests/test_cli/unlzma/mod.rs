@@ -1,1 +1,4 @@
-// unlzma is covered by the lzma integration tests.
+mod basic;
+mod cli_options;
+mod edge_cases;
+mod interop;

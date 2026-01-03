@@ -42,6 +42,10 @@ pub struct XzCatOpts {
         value_parser = parse_memory_limit
     )]
     memory: Option<u64>,
+
+    /// Decompress only the first stream, ignore remaining input
+    #[arg(long = "single-stream")]
+    single_stream: bool,
 }
 
 impl XzCatOpts {
@@ -68,7 +72,7 @@ impl XzCatOpts {
             lzma1: None,
             robot: false,
             suffix: None,
-            single_stream: false,
+            single_stream: self.single_stream,
             ignore_check: false,
             sparse: false,
         }
@@ -92,6 +96,7 @@ mod tests {
             quiet: 0,
             threads: Some(4),
             memory: Some(1024),
+            single_stream: false,
         };
 
         let config = opts.config();
@@ -112,6 +117,13 @@ mod tests {
         assert!(opts.verbose);
         assert_eq!(opts.threads, Some(2));
         assert_eq!(opts.memory, Some(512 * 1024));
+    }
+
+    #[test]
+    fn parse_single_stream_flag() {
+        let opts = XzCatOpts::try_parse_from(["xzcat", "--single-stream", "input.xz"]).unwrap();
+        assert_eq!(opts.files(), ["input.xz"]);
+        assert!(opts.single_stream);
     }
 
     #[test]

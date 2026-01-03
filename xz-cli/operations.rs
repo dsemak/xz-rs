@@ -9,11 +9,11 @@ use xz_core::{
     options::lzma1::Lzma1Options,
     options::{Compression, CompressionOptions, DecompressionOptions, Flags},
     pipeline::{compress, decompress},
-    ratio,
+    ratio, Error as CoreError,
 };
 
 use crate::config::CliConfig;
-use crate::error::{DiagnosticCause, Error, Result};
+use crate::error::{DiagnosticCause, Error, IoErrorNoCode, Result};
 use crate::format::list::{self, ListOutputContext, ListSummary};
 use crate::lzma1::parse_lzma1_options;
 
@@ -25,15 +25,13 @@ fn resolve_encode_format(config: &CliConfig) -> EncodeFormat {
     EncodeFormat::Xz
 }
 
-/// Validate options that depend on the chosen container format.
-fn validate_format_constraints(config: &CliConfig, encode_format: EncodeFormat) -> Result<()> {
-    if encode_format == EncodeFormat::Lzma && config.check != xz_core::options::IntegrityCheck::None
-    {
-        return Err(DiagnosticCause::from(Error::InvalidOption {
-            message: "integrity checks are not supported in .lzma format".into(),
-        }));
+/// Returns a human-readable error message corresponding to a `CoreError`.
+fn xz_message_from_core_error(err: &CoreError) -> String {
+    match err {
+        CoreError::Backend(backend) => backend.xz_message().to_string(),
+        CoreError::InvalidOption(message) => message.clone(),
+        _ => err.to_string(),
     }
-    Ok(())
 }
 
 /// Compute the effective compression level, applying `--extreme` when requested.
@@ -188,7 +186,6 @@ pub fn compress_file(
     config: &CliConfig,
 ) -> Result<()> {
     let encode_format = resolve_encode_format(config);
-    validate_format_constraints(config, encode_format)?;
 
     let compression_level = resolve_compression_level(config)?;
 
@@ -201,10 +198,8 @@ pub fn compress_file(
 
     // Perform compression and handle errors
     let summary = compress(&mut input, &mut output, &options).map_err(|e| {
-        DiagnosticCause::from(Error::Compression {
-            path: "(input)".to_string(),
-            message: e.to_string(),
-        })
+        let message = xz_message_from_core_error(&e);
+        DiagnosticCause::from(Error::Compression { message })
     })?;
 
     emit_compress_summary(config, summary.bytes_read, summary.bytes_written);
@@ -282,10 +277,8 @@ pub fn decompress_file(
 
     // Perform decompression and handle errors
     let summary = decompress(&mut input, &mut output, &options).map_err(|e| {
-        DiagnosticCause::from(Error::Decompression {
-            path: "(input)".to_string(),
-            message: e.to_string(),
-        })
+        let message = xz_message_from_core_error(&e);
+        DiagnosticCause::from(Error::Decompression { message })
     })?;
 
     // Print output if verbose or robot mode is enabled
@@ -378,8 +371,7 @@ pub(crate) fn list_file_with_context(
 
     let mut file = File::open(input_path).map_err(|source| {
         DiagnosticCause::from(Error::OpenInput {
-            path: input_path.to_string(),
-            source,
+            source: IoErrorNoCode::new(source),
         })
     })?;
 
@@ -415,7 +407,11 @@ pub(crate) fn list_file_with_context(
             info.uncompressed_size(),
             ratio(info.file_size(), info.uncompressed_size())
         )
-        .map_err(|source| DiagnosticCause::from(Error::WriteOutput { source }))?;
+        .map_err(|source| {
+            DiagnosticCause::from(Error::WriteOutput {
+                source: IoErrorNoCode::new(source),
+            })
+        })?;
     } else if config.verbose {
         let streams = info.streams();
         let mut blocks = info.blocks();

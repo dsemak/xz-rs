@@ -2,6 +2,107 @@ use crate::add_test;
 use crate::common::{generate_random_data, Fixture, SAMPLE_TEXT};
 use crate::MB;
 
+// Our xz (format=lzma) -> system xz -d.
+add_test!(our_lzma_to_system_xz, async {
+    const FILE_NAME: &str = "test.txt";
+
+    let data = SAMPLE_TEXT.as_bytes();
+    let mut fixture = Fixture::with_file(FILE_NAME, data);
+
+    let file_path = fixture.path(FILE_NAME);
+    let lzma_path = fixture.lzma_path(FILE_NAME);
+
+    let output = fixture
+        .run_cargo("xz", &["--format=lzma", "-k", &file_path])
+        .await;
+    assert!(output.status.success(), "our xz failed: {}", output.stderr);
+
+    fixture.remove_file(FILE_NAME);
+
+    let Some(system_out) = fixture.run_system("xz", &["-d", &lzma_path]).await else {
+        return;
+    };
+    assert!(
+        system_out.status.success(),
+        "system xz -d failed: {}",
+        system_out.stderr
+    );
+});
+
+// Interop matrix for `--lzma1`: our encoder <-> system decoder and vice versa.
+add_test!(lzma1_interop_matrix, async {
+    const FILE_NAME: &str = "test.txt";
+
+    let data = SAMPLE_TEXT.as_bytes();
+    let option_strings: &[&str] = &[
+        "preset=0",
+        "preset=6e",
+        "dict=4KiB,lc=3,lp=0,pb=2",
+        "dict=64KiB,lc=4,lp=0,pb=0",
+        "dict=1MiB,lc=3,lp=1,pb=2",
+        "mode=fast,mf=hc3,nice=32,depth=128,dict=1MiB,lc=3,lp=1,pb=2",
+        "mode=fast,mf=hc4,nice=64,depth=0,dict=2MiB,lc=4,lp=0,pb=2",
+        "mode=normal,mf=bt2,nice=128,depth=0,dict=8MiB,lc=3,lp=0,pb=4",
+        "mode=normal,mf=bt4,nice=273,depth=256,dict=16MiB,lc=3,lp=0,pb=2",
+    ];
+
+    for opts in option_strings {
+        // Our encode -> system decode.
+        let mut fixture = Fixture::with_file(FILE_NAME, data);
+        let file_path = fixture.path(FILE_NAME);
+        let lzma_path = fixture.lzma_path(FILE_NAME);
+
+        let out = fixture
+            .run_cargo("xz", &["--format=lzma", "--lzma1", opts, "-k", &file_path])
+            .await;
+        assert!(
+            out.status.success(),
+            "our xz failed for '{opts}': {}",
+            out.stderr
+        );
+
+        fixture.remove_file(FILE_NAME);
+
+        let Some(system_out) = fixture.run_system("xz", &["-d", &lzma_path]).await else {
+            continue;
+        };
+        assert!(
+            system_out.status.success(),
+            "system xz -d failed for '{opts}': {}",
+            system_out.stderr
+        );
+        fixture.assert_files(&[FILE_NAME], &[data]);
+
+        // System encode -> our decode.
+        let mut fixture = Fixture::with_file(FILE_NAME, data);
+        let file_path = fixture.path(FILE_NAME);
+        let lzma_path = fixture.lzma_path(FILE_NAME);
+
+        let lzma1_arg = format!("--lzma1={opts}");
+        let Some(system_out) = fixture
+            .run_system("xz", &["--format=lzma", &lzma1_arg, "-k", &file_path])
+            .await
+        else {
+            continue;
+        };
+        assert!(
+            system_out.status.success(),
+            "system xz failed for '{opts}': {}",
+            system_out.stderr
+        );
+
+        fixture.remove_file(FILE_NAME);
+
+        let out = fixture.run_cargo("unlzma", &[&lzma_path]).await;
+        assert!(
+            out.status.success(),
+            "unlzma failed for '{opts}': {}",
+            out.stderr
+        );
+        fixture.assert_files(&[FILE_NAME], &[data]);
+    }
+});
+
 // Test decompressing files created by system xz
 add_test!(decompress_system_xz, async {
     const FILE_NAME: &str = "system_compressed.txt";

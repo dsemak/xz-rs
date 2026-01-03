@@ -7,7 +7,8 @@ fn write_file(path: &Path, bytes: &[u8]) {
     std::fs::write(path, bytes).unwrap();
 }
 
-add_test!(lzma_vectors_good_decode, async {
+// Test good `.lzma` vectors.
+add_test!(good_decode, async {
     let mut fixture = Fixture::with_file("dummy.txt", b"dummy");
     let root = fixture.root_dir_path().to_path_buf();
 
@@ -54,7 +55,8 @@ add_test!(lzma_vectors_good_decode, async {
     }
 });
 
-add_test!(lzma_vectors_bad_rejected, async {
+// Test bad `.lzma` vectors.
+add_test!(bad_rejected, async {
     let mut fixture = Fixture::with_file("dummy.txt", b"dummy");
     let root = fixture.root_dir_path().to_path_buf();
 

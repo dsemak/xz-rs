@@ -84,9 +84,13 @@ pub struct LzmaOpts {
     #[arg(short = 'e', long = "extreme")]
     pub extreme: bool,
 
-    /// LZMA1 encoder options (comma-separated `key=value` list)
+    /// LZMA1 encoder options.
     #[arg(long = "lzma1", value_name = "OPTS", num_args = 0..=1, default_missing_value = "")]
     pub lzma1: Option<String>,
+
+    /// Use custom suffix on compressed files
+    #[arg(short = 'S', long = "suffix", value_name = "SUFFIX")]
+    pub suffix: Option<String>,
 
     /// Use at most this many threads (ignored for .lzma; kept for CLI compatibility)
     #[arg(short = 'T', long = "threads", value_name = "NUM")]
@@ -165,7 +169,7 @@ impl LzmaOpts {
             check: xz_core::options::IntegrityCheck::None,
             lzma1: self.lzma1.clone(),
             robot: false,
-            suffix: None,
+            suffix: self.suffix.clone(),
             single_stream: self.single_stream,
             ignore_check: self.ignore_check,
             sparse: !self.no_sparse,

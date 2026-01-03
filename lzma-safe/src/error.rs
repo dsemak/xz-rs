@@ -98,6 +98,22 @@ impl Error {
             Error::Unknown(code) => code,
         }
     }
+
+    /// Return an `xz(1)`-style short error message for this error.
+    pub fn xz_message(self) -> &'static str {
+        match self {
+            Error::MemLimitError => "Memory usage limit reached",
+            Error::FormatError => "File format not recognized",
+            Error::OptionsError => "Unsupported options",
+            Error::DataError => "Compressed data is corrupt",
+            Error::BufError => "Unexpected end of input",
+            Error::MemError => "Memory allocation failed",
+            Error::UnsupportedCheck => "Unsupported type of integrity check",
+            Error::ProgError | Error::SeekNeeded | Error::StreamEnd | Error::Unknown(_) => {
+                "Internal error (bug)"
+            }
+        }
+    }
 }
 
 /// Translate a `liblzma` status code into a `Result`.

@@ -42,6 +42,10 @@ pub struct LzCatOpts {
         value_parser = parse_memory_limit
     )]
     memory: Option<u64>,
+
+    /// Decompress only the first stream, ignore remaining input
+    #[arg(long = "single-stream")]
+    single_stream: bool,
 }
 
 impl LzCatOpts {
@@ -68,7 +72,7 @@ impl LzCatOpts {
             lzma1: None,
             robot: false,
             suffix: None,
-            single_stream: false,
+            single_stream: self.single_stream,
             ignore_check: false,
             sparse: false,
         }
@@ -93,6 +97,7 @@ mod tests {
             quiet: 0,
             threads: Some(4),
             memory: Some(1024),
+            single_stream: false,
         };
 
         let config = opts.config();

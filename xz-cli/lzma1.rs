@@ -1,7 +1,12 @@
 //! Parsing helpers for `--lzma1[=OPTS]`.
 //!
 //! Upstream `xz` accepts a comma-separated list of key=value pairs.
-//! This module implements a compatible subset intended for `.lzma` encoding.
+//! This module implements an upstream-compatible parser for the `.lzma` encoder.
+//!
+//! Examples (CLI):
+//!
+//! - `xz --format=lzma --lzma1=preset=6e,dict=8MiB,lc=3,lp=0,pb=2 -k FILE`
+//! - `xz --format=lzma --lzma1=mode=fast,mf=hc4,nice=64,depth=128 -k FILE`
 
 use std::result;
 
@@ -11,6 +16,12 @@ use xz_core::options::Compression;
 use crate::Error;
 
 type ParseResult<T> = result::Result<T, Error>;
+
+const DICT_MIN: u32 = 4096;
+
+// Upstream xz limits to 1.5 GiB: (1<<30) + (1<<29).
+const DICT_MAX: u32 = (1u32 << 30) + (1u32 << 29);
+const LCLP_MAX: u32 = 4;
 
 /// Parsed representation of `--lzma1` options.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -64,33 +75,37 @@ pub fn parse_lzma1_options(input: &str) -> ParseResult<CliOptions> {
             continue;
         }
         let (key, value) = part.split_once('=').ok_or_else(|| {
-            invalid_option(format!(
-                "invalid --lzma1 option '{part}': expected key=value"
-            ))
+            invalid_option("Options must be 'name=value' pairs separated with commas".to_string())
         })?;
         let key = key.trim();
         let value = value.trim();
         if value.is_empty() {
-            return Err(invalid_option(format!(
-                "invalid --lzma1 option '{part}': empty value"
-            )));
+            return Err(invalid_option(
+                "Options must be 'name=value' pairs separated with commas".into(),
+            ));
         }
 
         match key {
             "preset" => out.preset = Some(parse_preset(value)?),
-            "dict" => out.dict_size = Some(parse_u32_size(value)?),
-            "lc" => out.lc = Some(parse_u32_in_range("lc", value, 0, 8)?),
-            "lp" => out.lp = Some(parse_u32_in_range("lp", value, 0, 4)?),
+            "dict" => {
+                out.dict_size = Some(parse_u32_size_in_range("dict", value, DICT_MIN, DICT_MAX)?);
+            }
+            "lc" => out.lc = Some(parse_u32_in_range("lc", value, 0, LCLP_MAX)?),
+            "lp" => out.lp = Some(parse_u32_in_range("lp", value, 0, LCLP_MAX)?),
             "pb" => out.pb = Some(parse_u32_in_range("pb", value, 0, 4)?),
             "mode" => out.mode = Some(parse_mode(value)?),
             "nice" => out.nice_len = Some(parse_u32_in_range("nice", value, 2, 273)?),
             "mf" => out.mf = Some(parse_mf(value)?),
             "depth" => out.depth = Some(parse_u32("depth", value)?),
-            other => {
-                return Err(invalid_option(format!(
-                    "unknown --lzma1 option key '{other}'"
-                )))
-            }
+            other => return Err(invalid_option(format!("{other}: Invalid option name"))),
+        }
+    }
+
+    if let (Some(lc), Some(lp)) = (out.lc, out.lp) {
+        if lc + lp > LCLP_MAX {
+            return Err(invalid_option(
+                "The sum of lc and lp must not exceed 4".into(),
+            ));
         }
     }
 
@@ -103,23 +118,119 @@ fn invalid_option(message: String) -> Error {
 }
 
 /// Parse a decimal `u32` value.
-fn parse_u32(name: &str, value: &str) -> ParseResult<u32> {
+fn parse_u32(_name: &str, value: &str) -> ParseResult<u32> {
+    let value = value.trim();
+    if value == "max" {
+        return Ok(u32::MAX);
+    }
     value.parse::<u32>().map_err(|_| {
         invalid_option(format!(
-            "invalid --lzma1 {name} value '{value}': expected an integer"
+            "{value}: Value is not a non-negative decimal integer"
         ))
     })
 }
 
 /// Parse a decimal `u32` value and validate it falls within `min..=max`.
 fn parse_u32_in_range(name: &str, value: &str, min: u32, max: u32) -> ParseResult<u32> {
+    let value = value.trim();
+    if value == "max" {
+        return Ok(max);
+    }
+
     let parsed = parse_u32(name, value)?;
     if !(min..=max).contains(&parsed) {
         return Err(invalid_option(format!(
-            "invalid --lzma1 {name} value '{value}': expected {min}..={max}"
+            "Value of the option '{name}' must be in the range [{min}, {max}]"
         )));
     }
     Ok(parsed)
+}
+
+/// Parse a `u32` byte size value, supporting the same suffix conventions as upstream xz:
+/// `KiB`, `MiB`, `GiB`, or `K/M/G` with optional `i`, `iB`, or `B` (all base-2).
+fn parse_u32_size_in_range(name: &str, value: &str, min: u32, max: u32) -> ParseResult<u32> {
+    let value = value.trim();
+    if value == "max" {
+        return Ok(max);
+    }
+
+    if value.is_empty() {
+        return Err(invalid_option(
+            "Options must be 'name=value' pairs separated with commas".into(),
+        ));
+    }
+
+    // Parse leading decimal digits.
+    let mut digits_end = 0usize;
+    for (idx, ch) in value.char_indices() {
+        if !ch.is_ascii_digit() {
+            break;
+        }
+        digits_end = idx + ch.len_utf8();
+    }
+
+    if digits_end == 0 {
+        return Err(invalid_option(format!(
+            "{value}: Value is not a non-negative decimal integer"
+        )));
+    }
+
+    let num: u64 = value[..digits_end].parse::<u64>().map_err(|_| {
+        invalid_option(format!(
+            "{value}: Value is not a non-negative decimal integer"
+        ))
+    })?;
+
+    let suffix = &value[digits_end..];
+    let (multiplier, suffix_for_error): (u64, Option<&str>) = if suffix.is_empty() {
+        (1, None)
+    } else {
+        let mut chars = suffix.chars();
+        let first = chars.next().unwrap_or('\0');
+        let rest = chars.as_str();
+
+        let multiplier = match first {
+            'k' | 'K' => 1u64 << 10,
+            'm' | 'M' => 1u64 << 20,
+            'g' | 'G' => 1u64 << 30,
+            _ => 0,
+        };
+
+        if multiplier == 0 {
+            (0, Some(suffix))
+        } else if rest.is_empty() || rest == "i" || rest == "iB" || rest == "B" {
+            (multiplier, None)
+        } else {
+            (0, Some(suffix))
+        }
+    };
+
+    if multiplier == 0 {
+        let bad = suffix_for_error.unwrap_or(suffix);
+        return Err(invalid_option(format!(
+            "{bad}: Invalid multiplier suffix. Valid suffixes are 'KiB' (2^10), 'MiB' (2^20), and 'GiB' (2^30)."
+        )));
+    }
+
+    let bytes_u64 = num.checked_mul(multiplier).ok_or_else(|| {
+        invalid_option(format!(
+            "Value of the option '{name}' must be in the range [{min}, {max}]"
+        ))
+    })?;
+
+    let bytes_u32 = u32::try_from(bytes_u64).map_err(|_| {
+        invalid_option(format!(
+            "Value of the option '{name}' must be in the range [{min}, {max}]"
+        ))
+    })?;
+
+    if !(min..=max).contains(&bytes_u32) {
+        return Err(invalid_option(format!(
+            "Value of the option '{name}' must be in the range [{min}, {max}]"
+        )));
+    }
+
+    Ok(bytes_u32)
 }
 
 /// Parse `mode=fast|normal`.
@@ -127,9 +238,7 @@ fn parse_mode(value: &str) -> ParseResult<Mode> {
     match value {
         "fast" => Ok(Mode::Fast),
         "normal" => Ok(Mode::Normal),
-        _ => Err(invalid_option(format!(
-            "invalid --lzma1 mode '{value}': expected fast|normal"
-        ))),
+        _ => Err(invalid_option(format!("{value}: Invalid option value"))),
     }
 }
 
@@ -141,9 +250,7 @@ fn parse_mf(value: &str) -> ParseResult<MatchFinder> {
         "bt2" => Ok(MatchFinder::Bt2),
         "bt3" => Ok(MatchFinder::Bt3),
         "bt4" => Ok(MatchFinder::Bt4),
-        _ => Err(invalid_option(format!(
-            "invalid --lzma1 mf '{value}': expected hc3|hc4|bt2|bt3|bt4"
-        ))),
+        _ => Err(invalid_option(format!("{value}: Invalid option value"))),
     }
 }
 
@@ -154,62 +261,20 @@ fn parse_preset(value: &str) -> ParseResult<Compression> {
         .strip_suffix('e')
         .map_or((value, false), |v| (v, true));
 
-    let level: u8 = digits.parse::<u8>().map_err(|_| {
-        invalid_option(format!(
-            "invalid --lzma1 preset '{value}': expected 0..9 or 0e..9e"
-        ))
-    })?;
+    let level: u8 = digits
+        .parse::<u8>()
+        .map_err(|_| invalid_option(format!("Unsupported LZMA1/LZMA2 preset: {value}")))?;
     if level > 9 {
         return Err(invalid_option(format!(
-            "invalid --lzma1 preset '{value}': expected 0..9 or 0e..9e"
+            "Unsupported LZMA1/LZMA2 preset: {value}"
         )));
     }
     if extreme {
         Ok(Compression::Extreme(level))
     } else {
-        Compression::try_from(u32::from(level)).map_err(|_| {
-            invalid_option(format!(
-                "invalid --lzma1 preset '{value}': expected 0..9 or 0e..9e"
-            ))
-        })
+        Compression::try_from(u32::from(level))
+            .map_err(|_| invalid_option(format!("Unsupported LZMA1/LZMA2 preset: {value}")))
     }
-}
-
-/// Parse a `u32` byte size value, supporting `K/M/G` and `KiB/MiB/GiB` suffixes.
-fn parse_u32_size(value: &str) -> ParseResult<u32> {
-    let v = value.trim();
-    if v.is_empty() {
-        return Err(invalid_option("invalid --lzma1 dict size: empty".into()));
-    }
-
-    let (number_part, multiplier) = if let Some(rest) = v.strip_suffix("KiB") {
-        (rest, 1024_u64)
-    } else if let Some(rest) = v.strip_suffix("MiB") {
-        (rest, 1024_u64 * 1024)
-    } else if let Some(rest) = v.strip_suffix("GiB") {
-        (rest, 1024_u64 * 1024 * 1024)
-    } else if let Some(rest) = v.strip_suffix('K').or_else(|| v.strip_suffix('k')) {
-        (rest, 1024_u64)
-    } else if let Some(rest) = v.strip_suffix('M').or_else(|| v.strip_suffix('m')) {
-        (rest, 1024_u64 * 1024)
-    } else if let Some(rest) = v.strip_suffix('G').or_else(|| v.strip_suffix('g')) {
-        (rest, 1024_u64 * 1024 * 1024)
-    } else {
-        (v, 1_u64)
-    };
-
-    let num: u64 = number_part.trim().parse().map_err(|_| {
-        invalid_option(format!(
-            "invalid --lzma1 dict size '{value}': expected integer optionally suffixed with K/M/G"
-        ))
-    })?;
-
-    let bytes = num
-        .checked_mul(multiplier)
-        .ok_or_else(|| invalid_option(format!("invalid --lzma1 dict size '{value}': overflow")))?;
-
-    u32::try_from(bytes)
-        .map_err(|_| invalid_option(format!("invalid --lzma1 dict size '{value}': too large")))
 }
 
 #[cfg(test)]
@@ -240,5 +305,40 @@ mod tests {
         let opts =
             parse_lzma1_options("").unwrap_or_else(|e| panic!("empty input must be ok: {e}"));
         assert_eq!(opts, CliOptions::default());
+    }
+
+    /// Test combined invariants match upstream xz: lc + lp must not exceed 4.
+    #[test]
+    fn parse_rejects_lc_lp_sum_overflow() {
+        let err = parse_lzma1_options("lc=4,lp=1").unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("The sum of lc and lp must not exceed 4"),
+            "unexpected error: {err}"
+        );
+    }
+
+    /// Test dictionary limits match upstream xz.
+    #[test]
+    fn parse_rejects_too_small_dict() {
+        let err = parse_lzma1_options("dict=1").unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("Value of the option 'dict' must be in the range"),
+            "unexpected error: {err}"
+        );
+    }
+
+    /// Test size suffixes supported by upstream xz.
+    #[test]
+    fn parse_dict_accepts_suffixes() {
+        let opts = parse_lzma1_options("dict=1MiB").unwrap();
+        assert_eq!(opts.dict_size, Some(1024 * 1024));
+
+        let opts = parse_lzma1_options("dict=1MB").unwrap();
+        assert_eq!(opts.dict_size, Some(1024 * 1024));
+
+        let opts = parse_lzma1_options("dict=1Gi").unwrap();
+        assert_eq!(opts.dict_size, Some(1024 * 1024 * 1024));
     }
 }

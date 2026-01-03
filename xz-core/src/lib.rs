@@ -139,6 +139,14 @@
 //!     .with_memlimit_stop(Some(NonZeroU64::new(128 * 1024 * 1024).unwrap())) // 128MB hard limit
 //!     .with_mode(DecodeMode::Auto);                                   // Auto-detect format
 //! ```
+//!
+//! ## Legacy `.lzma` (`LZMA_Alone`)
+//!
+//! The legacy `.lzma` container is supported for compatibility with older tooling:
+//!
+//! - Encoding uses LZMA1 only and is always single-threaded.
+//! - The `.lzma` container doesn't store integrity checks (CRC/SHA).
+//! - Custom filter chains are not supported for `.lzma`.
 
 mod buffer;
 mod error;
