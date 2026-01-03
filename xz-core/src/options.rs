@@ -4,7 +4,6 @@ use std::num::{NonZeroU64, NonZeroUsize};
 use std::time::Duration;
 
 use lzma_safe::decoder::options::{Flags as DecoderFlags, Options as DecoderMtOptions};
-use lzma_safe::encoder::options::Lzma1Options;
 use lzma_safe::encoder::options::Options as EncoderMtOptions;
 use lzma_safe::{AloneEncoder, Decoder, Encoder, Stream};
 
@@ -12,6 +11,11 @@ pub use lzma_safe::decoder::options::Flags;
 pub use lzma_safe::encoder::options::{
     Compression, FilterConfig, FilterOptions, FilterType, IntegrityCheck,
 };
+
+/// LZMA1 encoder tuning options exposed for `.lzma` (`LZMA_Alone`) usage.
+pub mod lzma1 {
+    pub use lzma_safe::encoder::options::{Lzma1Options, MatchFinder, Mode};
+}
 
 use crate::config::DecodeMode;
 use crate::config::EncodeFormat;
@@ -31,7 +35,7 @@ pub struct CompressionOptions {
     timeout: Option<Duration>,
     filters: Vec<FilterConfig>,
     format: EncodeFormat,
-    lzma1: Option<Lzma1Options>,
+    lzma1: Option<lzma1::Lzma1Options>,
     input_buffer_size: NonZeroUsize,
     output_buffer_size: NonZeroUsize,
 }
@@ -174,7 +178,7 @@ impl CompressionOptions {
     ///
     /// If not specified, the LZMA1 options are derived from the selected compression preset.
     #[must_use]
-    pub fn with_lzma1_options(mut self, options: Option<Lzma1Options>) -> Self {
+    pub fn with_lzma1_options(mut self, options: Option<lzma1::Lzma1Options>) -> Self {
         self.lzma1 = options;
         self
     }
@@ -274,7 +278,7 @@ impl CompressionOptions {
 
         let options = match self.lzma1.clone() {
             Some(v) => v,
-            None => Lzma1Options::from_preset(self.level).map_err(Error::from)?,
+            None => lzma1::Lzma1Options::from_preset(self.level).map_err(Error::from)?,
         };
         AloneEncoder::new(options, Stream::default()).map_err(Error::from)
     }

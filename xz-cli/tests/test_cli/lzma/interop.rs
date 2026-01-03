@@ -56,5 +56,3 @@ add_test!(our_xz_lzma_to_system_xz, async {
         system_out.stderr
     );
 });
-
-

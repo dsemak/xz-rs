@@ -1,7 +1,7 @@
 use crate::add_test;
 use crate::common::{Fixture, SAMPLE_TEXT};
 
-add_test!(basic_compress_decompress_roundtrip, async {
+add_test!(lzma1_options_roundtrip, async {
     const FILE_NAME: &str = "test.txt";
 
     let data = SAMPLE_TEXT.as_bytes();
@@ -10,34 +10,35 @@ add_test!(basic_compress_decompress_roundtrip, async {
     let file_path = fixture.path(FILE_NAME);
     let lzma_path = fixture.lzma_path(FILE_NAME);
 
-    // Compress to .lzma
-    let output = fixture.run_cargo("lzma", &["-k", &file_path]).await;
-    assert!(output.status.success(), "lzma failed: {}", output.stderr);
+    let opts = "dict=1MiB,lc=4,lp=0,pb=2,mode=fast,mf=hc4,nice=64,depth=128";
+    let output = fixture
+        .run_cargo("xz", &["--format=lzma", "--lzma1", opts, "-k", &file_path])
+        .await;
+    assert!(output.status.success(), "xz failed: {}", output.stderr);
     assert!(fixture.file_exists("test.txt.lzma"));
 
     fixture.remove_file(FILE_NAME);
 
-    // Decompress back
     let output = fixture.run_cargo("unlzma", &[&lzma_path]).await;
     assert!(output.status.success(), "unlzma failed: {}", output.stderr);
     fixture.assert_files(&[FILE_NAME], &[data]);
 });
 
-add_test!(lzcat_outputs_plaintext_to_stdout, async {
+add_test!(lzma1_options_invalid_rejected, async {
     const FILE_NAME: &str = "test.txt";
 
     let data = SAMPLE_TEXT.as_bytes();
     let mut fixture = Fixture::with_file(FILE_NAME, data);
 
     let file_path = fixture.path(FILE_NAME);
-    let lzma_path = fixture.lzma_path(FILE_NAME);
 
-    // Create .lzma file
-    let output = fixture.run_cargo("lzma", &["-k", &file_path]).await;
-    assert!(output.status.success(), "lzma failed: {}", output.stderr);
-
-    // lzcat should write decompressed bytes to stdout
-    let output = fixture.run_cargo("lzcat", &[&lzma_path]).await;
-    assert!(output.status.success(), "lzcat failed: {}", output.stderr);
-    assert!(output.stdout_raw == data);
+    let output = fixture
+        .run_cargo("xz", &["--format=lzma", "--lzma1=lc=9", "-k", &file_path])
+        .await;
+    assert!(!output.status.success());
+    assert!(
+        output.stderr.contains("lzma1") || output.stderr.contains("lc"),
+        "unexpected stderr: {}",
+        output.stderr
+    );
 });

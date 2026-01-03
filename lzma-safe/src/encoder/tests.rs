@@ -108,7 +108,9 @@ fn alone_encoder_round_trip() {
 
     let mut decoder = Stream::default().alone_decoder(u64::MAX).unwrap();
     let mut output = vec![0u8; TEST_DATA.len() * 2];
-    let (_, written) = decoder.process(&compressed, &mut output, Action::Finish).unwrap();
+    let (_, written) = decoder
+        .process(&compressed, &mut output, Action::Finish)
+        .unwrap();
     assert_eq!(written, TEST_DATA.len());
     assert_eq!(&output[..written], TEST_DATA);
 }

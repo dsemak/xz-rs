@@ -67,9 +67,7 @@ pub fn generate_output_filename(
         OperationMode::Compress => {
             let mut output = input.to_path_buf();
             // Strip leading dot from suffix if present
-            let extension = suffix
-                .map(|s| s.strip_prefix('.').unwrap_or(s))
-                .unwrap_or(default_extension);
+            let extension = suffix.map_or(default_extension, |s| s.strip_prefix('.').unwrap_or(s));
 
             // Check if the file already has the target suffix (unless force is enabled)
             if !force {

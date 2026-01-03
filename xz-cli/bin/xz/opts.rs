@@ -130,6 +130,10 @@ pub struct XzOpts {
     #[arg(short = 'C', long = "check", value_name = "TYPE")]
     pub check: Option<String>,
 
+    /// LZMA1 encoder options (only used with `--format=lzma`)
+    #[arg(long = "lzma1", value_name = "OPTS", num_args = 0..=1, default_missing_value = "")]
+    pub lzma1: Option<String>,
+
     /// Read filenames from file (one per line)
     #[arg(
         long = "files",
@@ -223,8 +227,8 @@ impl XzOpts {
             }
             (_, Some("none")) => Ok(IntegrityCheck::None),
             (_, Some("crc32")) => Ok(IntegrityCheck::Crc32),
-            (_, Some("crc64")) => Ok(IntegrityCheck::Crc64),
-            (_, Some("sha256") | None) => Ok(IntegrityCheck::Sha256),
+            (_, Some("crc64") | None) => Ok(IntegrityCheck::Crc64),
+            (_, Some("sha256")) => Ok(IntegrityCheck::Sha256),
             (_, Some(invalid)) => {
                 Err(format!("{invalid}: Unsupported integrity check type").into())
             }
@@ -265,6 +269,7 @@ impl XzOpts {
             extreme: self.extreme,
             format,
             check: self.check_type_for_format(format)?,
+            lzma1: self.lzma1.clone(),
             robot: self.robot,
             suffix: self.suffix.clone(),
             single_stream: self.single_stream,
@@ -306,6 +311,7 @@ mod tests {
             extreme: false,
             format: None,
             check: None,
+            lzma1: None,
             files_from_file: None,
             files0_from_file: None,
             robot: false,

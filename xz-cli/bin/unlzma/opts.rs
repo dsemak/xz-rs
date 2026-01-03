@@ -91,6 +91,7 @@ impl UnlzmaOpts {
             extreme: false,
             format: xz_core::config::DecodeMode::Lzma,
             check: xz_core::options::IntegrityCheck::None,
+            lzma1: None,
             robot: false,
             suffix: None,
             single_stream: false,

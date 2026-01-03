@@ -57,9 +57,9 @@ fn sparse_writer_keeps_data_around_hole() {
     w.write_all(b"XYZ").unwrap();
     w.flush().unwrap();
 
-    let expected_len = 3 + 8192 + 3;
+    let expected_len: u64 = 3 + 8192 + 3;
     let meta = std::fs::metadata(&path).unwrap();
-    assert_eq!(meta.len(), expected_len as u64);
+    assert_eq!(meta.len(), expected_len);
 
     let mut f = File::open(&path).unwrap();
     let mut buf = [0u8; 3];
@@ -115,9 +115,9 @@ fn sparse_writer_handles_zero_runs_split_across_writes() {
     w.write_all(b"XYZ").unwrap();
     w.flush().unwrap();
 
-    let expected_len = 3 + 64 + 3;
+    let expected_len: u64 = 3 + 64 + 3;
     let meta = std::fs::metadata(&path).unwrap();
-    assert_eq!(meta.len(), expected_len as u64);
+    assert_eq!(meta.len(), expected_len);
 
     let mut f = File::open(&path).unwrap();
     f.seek(SeekFrom::Start(3)).unwrap();

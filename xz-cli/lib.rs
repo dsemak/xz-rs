@@ -8,6 +8,7 @@ mod config;
 mod error;
 mod format;
 mod io;
+mod lzma1;
 mod operations;
 mod process;
 mod utils;
