@@ -180,10 +180,7 @@ pub fn ratio(numerator: u64, denominator: u64) -> f64 {
     let numerator = u128::from(numerator);
     let scaled = numerator.saturating_mul(1000);
     let percent_tenths = (scaled + (denominator / 2)) / denominator;
-    let percent_tenths_u32 = match u32::try_from(percent_tenths) {
-        Ok(v) => v,
-        Err(_) => u32::MAX,
-    };
+    let percent_tenths_u32 = u32::try_from(percent_tenths).unwrap_or(u32::MAX);
 
     f64::from(percent_tenths_u32) / 10.0
 }
