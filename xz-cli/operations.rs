@@ -38,6 +38,10 @@ use crate::format::list::{self, ListOutputContext, ListSummary};
 /// - Invalid thread count (too large for [`u32`])
 /// - Compression operation failure from the underlying XZ library
 /// - I/O errors during read or write operations
+///
+/// # Panics
+///
+/// This function does not panic during compression conversion.
 pub fn compress_file(
     mut input: impl io::Read,
     mut output: impl io::Write,
@@ -50,10 +54,22 @@ pub fn compress_file(
     // Extreme is a modifier that applies to the selected preset level,
     // not a separate level.
     let compression_level = match (config.level, config.extreme) {
-        (Some(level), true) => Compression::Extreme(level as u8),
+        (Some(level), true) => {
+            let level_conv = u8::try_from(level)
+                .map_err(|_| DiagnosticCause::from(Error::InvalidCompressionLevel { level }))?;
+            if level_conv > 9 {
+                return Err(DiagnosticCause::from(Error::InvalidCompressionLevel {
+                    level,
+                }));
+            }
+            Compression::Extreme(level_conv)
+        }
         (Some(level), false) => Compression::try_from(level)
             .map_err(|_| DiagnosticCause::from(Error::InvalidCompressionLevel { level }))?,
-        (None, true) => Compression::Extreme(Compression::default().to_preset() as u8),
+        (None, true) => {
+            let level = Compression::default();
+            Compression::Extreme(u8::try_from(level.to_preset()).unwrap())
+        }
         (None, false) => Compression::default(),
     };
 

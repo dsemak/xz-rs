@@ -22,7 +22,7 @@ add_test!(basic_decompress, async {
     assert!(output.stdout_raw == data);
 
     // Compressed file should still exist
-    assert!(fixture.file_exists(&format!("{}.xz", FILE_NAME)));
+    assert!(fixture.file_exists(&format!("{FILE_NAME}.xz")));
 });
 
 // Test xzcat with multiple files
@@ -107,7 +107,7 @@ add_test!(preserves_original, async {
     assert!(output.status.success());
 
     // Compressed file must still exist
-    assert!(fixture.file_exists(&format!("{}.xz", FILE_NAME)));
+    assert!(fixture.file_exists(&format!("{FILE_NAME}.xz")));
 });
 
 // Test xzcat with empty file
@@ -134,8 +134,8 @@ add_test!(binary_data, async {
     const FILE_NAME: &str = "binary.bin";
 
     let mut binary_data = Vec::new();
-    for i in 0..256 {
-        binary_data.push(i as u8);
+    for i in 0x00..0xFF {
+        binary_data.push(i);
     }
 
     let mut fixture = Fixture::with_file(FILE_NAME, &binary_data);

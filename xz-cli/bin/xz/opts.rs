@@ -204,12 +204,10 @@ impl XzOpts {
     /// Parse the file format from the format string
     pub fn file_format(&self) -> Result<DecodeMode, Box<dyn std::error::Error>> {
         match self.format.as_deref() {
-            Some("auto") => Ok(DecodeMode::Auto),
             Some("xz") => Ok(DecodeMode::Xz),
             Some("lzma") => Ok(DecodeMode::Lzma),
-            Some("raw") => Ok(DecodeMode::Auto), // Raw format is handled differently
+            Some("raw" | "auto") | None => Ok(DecodeMode::Auto), // Raw format is handled differently
             Some(invalid) => Err(format!("{invalid}: Unknown file format type").into()),
-            None => Ok(DecodeMode::Auto),
         }
     }
 
@@ -218,15 +216,14 @@ impl XzOpts {
         match self.check.as_deref() {
             Some("none") => Ok(IntegrityCheck::None),
             Some("crc32") => Ok(IntegrityCheck::Crc32),
-            Some("crc64") => Ok(IntegrityCheck::Crc64),
             Some("sha256") => Ok(IntegrityCheck::Sha256),
+            Some("crc64") | None => Ok(IntegrityCheck::Crc64),
             Some(invalid) => Err(format!("{invalid}: Unsupported integrity check type").into()),
-            None => Ok(IntegrityCheck::Crc64),
         }
     }
 
     /// Get the compression level from the preset flags
-    pub fn compression_level(&self) -> Option<u32> {
+    pub fn compression_level(&self) -> Option<u8> {
         [
             (self.level_0, 0),
             (self.level_1, 1),
@@ -252,7 +249,7 @@ impl XzOpts {
             stdout: self.stdout,
             verbose: self.verbose,
             quiet: self.quiet,
-            level: self.compression_level(),
+            level: self.compression_level().map(u32::from),
             threads: self.threads,
             memory_limit: self.memory,
             extreme: self.extreme,
@@ -271,7 +268,7 @@ impl XzOpts {
 mod tests {
     use super::*;
 
-    /// Helper function to create default XzOpts for testing
+    /// Helper function to create default [`XzOpts`] for testing
     fn default_opts() -> XzOpts {
         XzOpts {
             files: vec![],

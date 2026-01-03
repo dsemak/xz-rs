@@ -164,7 +164,7 @@ fn decoder_process_after_finish_errors() {
     assert_eq!(err, Error::ProgError);
 }
 
-/// Test decoder with corrupted data returns [`Error::DataError`].
+/// Test decoder with corrupted data returns [`crate::Error::DataError`].
 #[test]
 fn decoder_corrupted_data_error() {
     let mut corrupted_data = compress_xz(TEST_DATA_PRIMARY);
@@ -182,7 +182,7 @@ fn decoder_corrupted_data_error() {
     assert!(matches!(err, Error::DataError | Error::FormatError));
 }
 
-/// Test decoder with invalid format data returns [`Error::FormatError`].
+/// Test decoder with invalid format data returns [`crate::Error::FormatError`].
 #[test]
 fn decoder_invalid_format_error() {
     let invalid_data = b"Not XZ compressed data";
@@ -195,7 +195,7 @@ fn decoder_invalid_format_error() {
     assert!(matches!(err, Error::FormatError | Error::DataError));
 }
 
-/// Test decoder with memory limit too low returns [`Error::MemLimitError`].
+/// Test decoder with memory limit too low returns [`crate::Error::MemLimitError`].
 #[test]
 fn decoder_memory_limit_error() {
     let compressed = compress_xz(TEST_DATA_PRIMARY);

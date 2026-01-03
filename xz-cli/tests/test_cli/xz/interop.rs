@@ -103,12 +103,11 @@ add_test!(system_compatibility_levels, async {
 
         // Compress with our xz at specific level
         let output = fixture
-            .run_cargo("xz", &[&format!("-{}", level), "-k", &file_path])
+            .run_cargo("xz", &[&format!("-{level}"), "-k", &file_path])
             .await;
         assert!(
             output.status.success(),
-            "Our compression at level {} failed",
-            level
+            "Our compression at level {level} failed"
         );
 
         fixture.remove_file(FILE_NAME);
@@ -117,8 +116,7 @@ add_test!(system_compatibility_levels, async {
         if let Some(output) = fixture.run_system("xz", &["-d", &compressed_path]).await {
             assert!(
                 output.status.success(),
-                "System decompression of level {} failed",
-                level
+                "System decompression of level {level} failed"
             );
 
             fixture.assert_files(&[FILE_NAME], &[&data]);
@@ -140,11 +138,7 @@ add_test!(system_format_compatibility, async {
 
         // Compress with system xz if available
         if let Some(output) = fixture.run_system("xz", &["--keep", &file_path]).await {
-            assert!(
-                output.status.success(),
-                "System xz failed for {}",
-                file_name
-            );
+            assert!(output.status.success(), "System xz failed for {file_name}");
 
             fixture.remove_file(file_name);
 
@@ -152,8 +146,7 @@ add_test!(system_format_compatibility, async {
             let output = fixture.run_cargo("xz", &["-d", &compressed_path]).await;
             assert!(
                 output.status.success(),
-                "Our xz decompression failed for {}",
-                file_name
+                "Our xz decompression failed for {file_name}"
             );
 
             fixture.assert_files(&[file_name], &[data]);

@@ -97,6 +97,11 @@ impl Index {
     ///
     /// This is needed for functions like `checks()` to report meaningful values and for
     /// downstream code that needs to know the integrity check type.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `footer` is not a valid XZ Stream Footer or if liblzma
+    /// rejects the decoded flags.
     pub fn set_stream_flags_from_footer(
         &mut self,
         footer: &[u8; crate::stream::HEADER_SIZE],
@@ -106,6 +111,10 @@ impl Index {
     }
 
     /// Set Stream Padding for the last Stream in this index.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if liblzma rejects the padding value for the current index.
     pub fn set_stream_padding(&mut self, padding: u64) -> Result<()> {
         ffi::lzma_index_stream_padding(self, padding)
     }
@@ -113,6 +122,12 @@ impl Index {
     /// Append `other` after `self`, concatenating Stream information.
     ///
     /// On success, `other` is consumed and must not be used again.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if liblzma fails to concatenate the indexes (for example due
+    /// to invalid index state or memory allocation failure). On error, `other`
+    /// remains unchanged and will be dropped normally.
     pub fn append(&mut self, other: Index) -> Result<()> {
         // Take a local clone to avoid borrowing `self` immutably while it is mutably borrowed.
         let allocator = self.allocator.clone();
@@ -354,16 +369,29 @@ impl StreamFlags {
     }
 
     /// Decode an XZ Stream Header.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `input` is not a valid XZ Stream Header.
     pub fn decode_header(input: &[u8; crate::stream::HEADER_SIZE]) -> Result<Self> {
         ffi::decode_stream_header_flags(input)
     }
 
     /// Decode an XZ Stream Footer.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `input` is not a valid XZ Stream Footer.
     pub fn decode_footer(input: &[u8; crate::stream::HEADER_SIZE]) -> Result<Self> {
         ffi::decode_stream_footer_flags(input)
     }
 
     /// Decode and compare Stream Header and Stream Footer flags.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if either `header` or `footer` is invalid, or if the flags
+    /// do not match according to liblzma's rules.
     pub fn compare_header_footer(
         header: &[u8; crate::stream::HEADER_SIZE],
         footer: &[u8; crate::stream::HEADER_SIZE],

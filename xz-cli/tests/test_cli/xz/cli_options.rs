@@ -15,7 +15,7 @@ add_test!(compression_levels, async {
 
         // Compress with specific level
         let output = fixture
-            .run_cargo("xz", &[&format!("-{}", level), "-k", &file_path])
+            .run_cargo("xz", &[&format!("-{level}"), "-k", &file_path])
             .await;
         assert!(output.status.success());
 
@@ -41,7 +41,7 @@ add_test!(thread_option, async {
         let compressed_path = fixture.compressed_path(FILE_NAME);
 
         let output = fixture
-            .run_cargo("xz", &[&format!("-T{}", threads), "-k", &file_path])
+            .run_cargo("xz", &[&format!("-T{threads}"), "-k", &file_path])
             .await;
         assert!(output.status.success());
 
@@ -200,9 +200,9 @@ add_test!(multiple_files, async {
     assert!(output.status.success());
 
     // All compressed files should exist
-    assert!(fixture.file_exists(&format!("{}.xz", FILE_1)));
-    assert!(fixture.file_exists(&format!("{}.xz", FILE_2)));
-    assert!(fixture.file_exists(&format!("{}.xz", FILE_3)));
+    assert!(fixture.file_exists(&format!("{FILE_1}.xz")));
+    assert!(fixture.file_exists(&format!("{FILE_2}.xz")));
+    assert!(fixture.file_exists(&format!("{FILE_3}.xz")));
 });
 
 // Test --files[=FILE] reads newline-delimited file names from a file.
@@ -370,7 +370,7 @@ add_test!(custom_suffix_option, async {
 
     let mut fixture = Fixture::with_file(FILE_NAME, &data);
     let file_path = fixture.path(FILE_NAME);
-    let custom_compressed_name = format!("{}.{}", FILE_NAME, CUSTOM_SUFFIX);
+    let custom_compressed_name = format!("{FILE_NAME}.{CUSTOM_SUFFIX}");
     let custom_compressed = fixture.path(&custom_compressed_name);
 
     // Compress with custom suffix
@@ -406,7 +406,7 @@ add_test!(custom_suffix_with_dot, async {
 
     let mut fixture = Fixture::with_file(FILE_NAME, &data);
     let file_path = fixture.path(FILE_NAME);
-    let custom_compressed_name = format!("{}{}", FILE_NAME, CUSTOM_SUFFIX);
+    let custom_compressed_name = format!("{FILE_NAME}{CUSTOM_SUFFIX}");
     let custom_compressed = fixture.path(&custom_compressed_name);
 
     // Compress with custom suffix (with leading dot)

@@ -4,14 +4,19 @@
 ///
 /// Uses `KiB` for values >= 1024 bytes and `MiB` for values >= 1 MiB.
 pub(crate) fn format_list_size(bytes: u64) -> String {
-    const KIB: f64 = 1024.0;
-    const MIB: f64 = 1024.0 * 1024.0;
+    const KIB: u64 = 1024;
+    const MIB: u64 = 1024 * 1024;
 
-    let bytes_f = bytes as f64;
-    if bytes_f >= MIB {
-        format!("{:.1} MiB", bytes_f / MIB)
-    } else if bytes_f >= KIB {
-        format!("{:.1} KiB", bytes_f / KIB)
+    if bytes >= MIB {
+        let tenths = bytes.saturating_mul(10) / MIB;
+        let whole = tenths / 10;
+        let frac = tenths % 10;
+        format!("{whole}.{frac} MiB")
+    } else if bytes >= KIB {
+        let tenths = bytes.saturating_mul(10) / KIB;
+        let whole = tenths / 10;
+        let frac = tenths % 10;
+        format!("{whole}.{frac} KiB")
     } else {
         format!("{bytes} B")
     }

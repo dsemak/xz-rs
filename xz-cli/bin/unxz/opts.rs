@@ -8,6 +8,7 @@ use xz_cli::{parse_memory_limit, CliConfig, OperationMode};
 ///
 /// Equivalent to `xz --decompress`. Can optionally test integrity without
 /// writing the decompressed output.
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Parser)]
 #[command(
     name = "unxz",

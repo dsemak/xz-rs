@@ -19,7 +19,8 @@ pub fn generate_random_data_with_seed(size: usize, mut seed: u64) -> Vec<u8> {
     for _ in 0..size {
         // Linear congruential generator: compatible, deterministic, dependency-free.
         seed = seed.wrapping_mul(1_103_515_245).wrapping_add(12_345);
-        data.push((seed >> 16) as u8);
+        // Take the next byte from the generator state (no truncation by construction).
+        data.push(((seed >> 16) & 0xFF) as u8);
     }
 
     data

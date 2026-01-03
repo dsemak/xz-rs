@@ -9,6 +9,7 @@ use xz_cli::{parse_memory_limit, CliConfig, OperationMode};
 /// xzdec is a liblzma-based decompression-only tool for .xz (and only .xz) files.
 /// xzdec is intended to work as a drop-in replacement for xz(1) in the most common
 /// situations where a script has been written to use xz --decompress --stdout.
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Parser)]
 #[command(
     name = "xzdec",
@@ -25,15 +26,15 @@ pub struct XzDecOpts {
 
     /// Ignored for xz(1) compatibility. xzdec supports only decompression.
     #[arg(short = 'd', long = "decompress", alias = "uncompress")]
-    _decompress: bool,
+    decompress: bool,
 
     /// Ignored for xz(1) compatibility. xzdec never creates or removes any files.
     #[arg(short = 'k', long = "keep")]
-    _keep: bool,
+    keep: bool,
 
     /// Ignored for xz(1) compatibility. xzdec always writes the decompressed data to standard output.
     #[arg(short = 'c', long = "stdout", alias = "to-stdout")]
-    _stdout: bool,
+    stdout: bool,
 
     /// Memory usage limit for decompression
     #[arg(
@@ -51,7 +52,7 @@ pub struct XzDecOpts {
 
     /// Ignored for xz(1) compatibility. xzdec never uses the exit status 2.
     #[arg(short = 'Q', long = "no-warn")]
-    _no_warn: bool,
+    no_warn: bool,
 }
 
 impl XzDecOpts {
@@ -105,12 +106,12 @@ mod tests {
     fn config_sets_cat_mode_and_stdout() {
         let opts = XzDecOpts {
             files: vec!["input.xz".into()],
-            _decompress: false,
-            _keep: false,
-            _stdout: false,
+            decompress: false,
+            keep: false,
+            stdout: false,
             memory: Some(1024),
             quiet: 0,
-            _no_warn: false,
+            no_warn: false,
         };
 
         let config = opts.config();
@@ -149,10 +150,10 @@ mod tests {
 
         assert_eq!(opts.files(), ["input.xz"]);
         // These options should be parsed but ignored in behavior
-        assert!(opts._decompress);
-        assert!(opts._keep);
-        assert!(opts._stdout);
-        assert!(opts._no_warn);
+        assert!(opts.decompress);
+        assert!(opts.keep);
+        assert!(opts.stdout);
+        assert!(opts.no_warn);
     }
 
     #[test]
@@ -170,8 +171,8 @@ mod tests {
         };
 
         assert_eq!(opts.files(), ["input.xz"]);
-        assert!(opts._decompress);
-        assert!(opts._stdout);
+        assert!(opts.decompress);
+        assert!(opts.stdout);
         assert_eq!(opts.memory, Some(512 * 1024));
     }
 }

@@ -90,13 +90,13 @@ add_test!(various_extensions, async {
 
         // Compress
         let output = fixture.run_cargo("xz", &["-k", &file_path]).await;
-        assert!(output.status.success(), "Failed for {}", file_name);
+        assert!(output.status.success(), "Failed for {file_name}");
 
         fixture.remove_file(file_name);
 
         // Decompress
         let output = fixture.run_cargo("xz", &["-d", &compressed_path]).await;
-        assert!(output.status.success(), "Failed for {}", file_name);
+        assert!(output.status.success(), "Failed for {file_name}");
 
         fixture.assert_files(&[file_name], &[data]);
     }

@@ -33,8 +33,8 @@ impl FileInfoDecoder {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::MemError`] if memory allocation fails.
-    /// Returns [`Error::ProgError`] if the decoder is misused.
+    /// Returns [`crate::Error::MemError`] if memory allocation fails.
+    /// Returns [`crate::Error::ProgError`] if the decoder is misused.
     pub fn new(memlimit: u64, file_size: u64, mut stream: Stream) -> Result<Self> {
         let mut index_ptr_box = Box::new(std::ptr::null_mut());
         let allocator = stream.allocator();
@@ -66,7 +66,7 @@ impl FileInfoDecoder {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::SeekNeeded`] if the decoder needs the application to seek
+    /// Returns [`crate::Error::SeekNeeded`] if the decoder needs the application to seek
     /// to a different position in the file. Use [`seek_pos()`](Self::seek_pos) to get the target position.
     /// Returns various other errors depending on the input data and decoder state.
     pub fn process(&mut self, input: &[u8], action: Action) -> Result<usize> {
@@ -152,7 +152,7 @@ impl FileInfoDecoder {
 
     /// Get the seek position if the decoder needs to seek.
     ///
-    /// This should be called when `process` returns [`Error::SeekNeeded`].
+    /// This should be called when `process` returns [`crate::Error::SeekNeeded`].
     /// The application should then seek to this position in the input file
     /// and provide data starting from this position.
     pub fn seek_pos(&self) -> u64 {
@@ -161,7 +161,7 @@ impl FileInfoDecoder {
 
     /// Clears the current input window (sets `next_in = NULL` and `avail_in = 0`).
     ///
-    /// This is primarily useful after [`Error::SeekNeeded`] is returned from [`process`](Self::process)
+    /// This is primarily useful after [`crate::Error::SeekNeeded`] is returned from [`process`](Self::process)
     /// and the caller has repositioned the underlying input (e.g. via `Seek`). Clearing the old
     /// input window ensures that liblzma won't attempt to continue using stale pointers.
     pub fn clear_input(&mut self) {

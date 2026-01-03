@@ -164,9 +164,18 @@ pub use buffer::{Allocator, Buffer, Deallocator, DeallocatorFn, GlobalAllocator}
 ///
 /// The ratio as a percentage (0.0-100.0+), or 0.0 if denominator is zero.
 pub fn ratio(numerator: u64, denominator: u64) -> f64 {
-    if denominator > 0 {
-        (numerator as f64 / denominator as f64) * 100.0
-    } else {
-        0.0
+    if denominator == 0 {
+        return 0.0;
     }
+
+    let denominator = u128::from(denominator);
+    let numerator = u128::from(numerator);
+    let scaled = numerator.saturating_mul(1000);
+    let percent_tenths = (scaled + (denominator / 2)) / denominator;
+    let percent_tenths_u32 = match u32::try_from(percent_tenths) {
+        Ok(v) => v,
+        Err(_) => u32::MAX,
+    };
+
+    f64::from(percent_tenths_u32) / 10.0
 }

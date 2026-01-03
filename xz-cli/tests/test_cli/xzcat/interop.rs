@@ -58,21 +58,19 @@ add_test!(different_levels_compatibility, async {
 
         // Compress with system xz at specific level if available
         if let Some(output) = fixture
-            .run_system("xz", &[&format!("-{}", level), &file_path])
+            .run_system("xz", &[&format!("-{level}"), &file_path])
             .await
         {
             assert!(
                 output.status.success(),
-                "System compression at level {} failed",
-                level
+                "System compression at level {level} failed"
             );
 
             // Decompress with our xzcat
             let output = fixture.run_cargo("xzcat", &[&compressed_path]).await;
             assert!(
                 output.status.success(),
-                "Our xzcat failed for level {}",
-                level
+                "Our xzcat failed for level {level}"
             );
             assert!(output.stdout_raw == data);
         }
@@ -134,7 +132,10 @@ add_test!(multiple_system_files, async {
 
     if all_compressed {
         // Decompress all with our xzcat
-        let compressed_refs: Vec<&str> = compressed_paths.iter().map(|s| s.as_str()).collect();
+        let compressed_refs: Vec<&str> = compressed_paths
+            .iter()
+            .map(std::string::String::as_str)
+            .collect();
         let output = fixture.run_cargo("xzcat", &compressed_refs).await;
         assert!(output.status.success());
 
@@ -199,19 +200,11 @@ add_test!(format_compatibility, async {
 
         // Compress with system xz if available
         if let Some(output) = fixture.run_system("xz", &[&file_path]).await {
-            assert!(
-                output.status.success(),
-                "System xz failed for {}",
-                file_name
-            );
+            assert!(output.status.success(), "System xz failed for {file_name}");
 
             // Decompress with our xzcat
             let output = fixture.run_cargo("xzcat", &[&compressed_path]).await;
-            assert!(
-                output.status.success(),
-                "Our xzcat failed for {}",
-                file_name
-            );
+            assert!(output.status.success(), "Our xzcat failed for {file_name}");
             assert!(output.stdout_raw == data);
         }
     }

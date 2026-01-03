@@ -14,7 +14,7 @@ add_test!(compress_decompress, async {
     // Compress
     let output = fixture.run_cargo("xz", &["-k", &file_path]).await;
     assert!(output.status.success());
-    assert!(fixture.file_exists(&format!("{}.xz", FILE_NAME)));
+    assert!(fixture.file_exists(&format!("{FILE_NAME}.xz")));
 
     fixture.remove_file(FILE_NAME);
 
@@ -39,7 +39,7 @@ add_test!(compress_keep_original, async {
 
     // Both files should exist
     assert!(fixture.file_exists(FILE_NAME));
-    assert!(fixture.file_exists(&format!("{}.xz", FILE_NAME)));
+    assert!(fixture.file_exists(&format!("{FILE_NAME}.xz")));
 });
 
 // Test compression with -f (force) flag
@@ -105,7 +105,7 @@ add_test!(decompress_to_stdout, async {
     assert!(output.stdout_raw == data);
 
     // Compressed file should still exist
-    assert!(fixture.file_exists(&format!("{}.xz", FILE_NAME)));
+    assert!(fixture.file_exists(&format!("{FILE_NAME}.xz")));
 });
 
 // Test compression with repetitive data
@@ -168,5 +168,5 @@ add_test!(test_integrity, async {
     assert!(output.status.success());
 
     // Compressed file should still exist
-    assert!(fixture.file_exists(&format!("{}.xz", FILE_NAME)));
+    assert!(fixture.file_exists(&format!("{FILE_NAME}.xz")));
 });

@@ -61,7 +61,7 @@ impl TryFrom<liblzma_sys::lzma_check> for IntegrityCheck {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::UnsupportedCheck`] if the value does not correspond to
+    /// Returns [`crate::Error::UnsupportedCheck`] if the value does not correspond to
     /// a supported check type. This can happen with newer liblzma versions that
     /// support check types not yet known to this crate.
     fn try_from(check: liblzma_sys::lzma_check) -> std::result::Result<Self, Self::Error> {

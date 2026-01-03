@@ -144,7 +144,7 @@ mod test {
         }
     }
 
-    /// Test conversion from unknown `lzma_ret` code to [`Error::Unknown`].
+    /// Test conversion from unknown `lzma_ret` code to [`crate::Error::Unknown`].
     #[test]
     fn test_lzma_error_from_unknown_code() {
         let unknown_code = 12345;
@@ -155,14 +155,14 @@ mod test {
         }
     }
 
-    /// Test that [`Error::from`] panics on `LZMA_OK`.
+    /// Test that [`crate::Error::from`] panics on `LZMA_OK`.
     #[test]
     #[should_panic(expected = "LZMA_OK is treated as success")]
     fn test_lzma_error_from_ok_panics() {
         let _ = Error::from(liblzma_sys::lzma_ret_LZMA_OK);
     }
 
-    /// Test that [`Error::to_raw`] returns the correct `lzma_ret` code for each Error variant.
+    /// Test that [`crate::Error::to_raw`] returns the correct `lzma_ret` code for each Error variant.
     #[test]
     fn test_lzma_error_to_raw_all_variants() {
         let cases = [

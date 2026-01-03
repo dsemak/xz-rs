@@ -16,13 +16,13 @@ add_test!(different_compression_levels, async {
 
         // Compress at specific level
         let output = fixture
-            .run_cargo("xz", &[&format!("-{}", level), &file_path])
+            .run_cargo("xz", &[&format!("-{level}"), &file_path])
             .await;
         assert!(output.status.success());
 
         // xzdec should decompress any level
         let output = fixture.run_cargo("xzdec", &[&compressed_path]).await;
-        assert!(output.status.success(), "Failed for level {}", level);
+        assert!(output.status.success(), "Failed for level {level}");
         assert!(output.stdout_raw == data);
     }
 });

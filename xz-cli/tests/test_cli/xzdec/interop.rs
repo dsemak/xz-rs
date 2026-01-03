@@ -58,21 +58,19 @@ add_test!(different_levels_compatibility, async {
 
         // Compress with system xz at specific level if available
         if let Some(output) = fixture
-            .run_system("xz", &[&format!("-{}", level), &file_path])
+            .run_system("xz", &[&format!("-{level}"), &file_path])
             .await
         {
             assert!(
                 output.status.success(),
-                "System compression at level {} failed",
-                level
+                "System compression at level {level} failed"
             );
 
             // Decompress with our xzdec
             let output = fixture.run_cargo("xzdec", &[&compressed_path]).await;
             assert!(
                 output.status.success(),
-                "Our xzdec failed for level {}",
-                level
+                "Our xzdec failed for level {level}"
             );
             assert!(output.stdout_raw == data);
         }
@@ -197,19 +195,11 @@ add_test!(format_compatibility, async {
 
         // Compress with system xz if available
         if let Some(output) = fixture.run_system("xz", &[&file_path]).await {
-            assert!(
-                output.status.success(),
-                "System xz failed for {}",
-                file_name
-            );
+            assert!(output.status.success(), "System xz failed for {file_name}");
 
             // Decompress with our xzdec
             let output = fixture.run_cargo("xzdec", &[&compressed_path]).await;
-            assert!(
-                output.status.success(),
-                "Our xzdec failed for {}",
-                file_name
-            );
+            assert!(output.status.success(), "Our xzdec failed for {file_name}");
             assert!(output.stdout_raw == data);
         }
     }

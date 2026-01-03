@@ -28,8 +28,8 @@ impl IndexDecoder {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::MemError`] if memory allocation fails.
-    /// Returns [`Error::ProgError`] if the decoder is misused.
+    /// Returns [`crate::Error::MemError`] if memory allocation fails.
+    /// Returns [`crate::Error::ProgError`] if the decoder is misused.
     pub fn new(memlimit: u64, mut stream: Stream) -> Result<Self> {
         let mut index_ptr: *mut liblzma_sys::lzma_index = std::ptr::null_mut();
         let allocator = stream.allocator();

@@ -90,8 +90,8 @@ add_test!(binary_data, async {
 
     // Create binary data with all byte values
     let mut binary_data = Vec::new();
-    for i in 0..256 {
-        binary_data.push(i as u8);
+    for i in 0x00..0xFF {
+        binary_data.push(i);
     }
     binary_data.extend_from_slice(&[0x00, 0xFF, 0xAA, 0x55].repeat(500));
 
@@ -214,10 +214,8 @@ add_test!(dash_reads_stdin_in_middle, async {
     let data_2 = b"file2 data";
     let stdin_data = b"stdin data";
 
-    let mut fixture = Fixture::with_files(
-        &[FILE_1, FILE_2, STDIN_FILE],
-        &[data_1, data_2, stdin_data],
-    );
+    let mut fixture =
+        Fixture::with_files(&[FILE_1, FILE_2, STDIN_FILE], &[data_1, data_2, stdin_data]);
 
     // Prepare file inputs as .xz files on disk (this removes the originals).
     let file_1_path = fixture.path(FILE_1);

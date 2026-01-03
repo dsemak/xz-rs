@@ -13,8 +13,8 @@ const STREAM_HEADER_SIZE: usize = lzma_safe::stream::HEADER_SIZE;
 const STREAM_HEADER_SIZE_U64: u64 = STREAM_HEADER_SIZE as u64;
 
 /// Stream Padding is a sequence of `0x00` bytes whose size is a multiple of four bytes.
-const STREAM_PADDING_ALIGNMENT_BYTES: u64 = 4;
-const STREAM_PADDING_WORD_SIZE: usize = STREAM_PADDING_ALIGNMENT_BYTES as usize;
+const STREAM_PADDING_WORD_SIZE: usize = 4;
+const STREAM_PADDING_ALIGNMENT_BYTES: u64 = STREAM_PADDING_WORD_SIZE as u64;
 
 /// Minimum size of a valid XZ stream: header + footer.
 const MIN_STREAM_SIZE: u64 = 2 * STREAM_HEADER_SIZE_U64;
@@ -63,7 +63,7 @@ impl FileInfo {
             .iter_streams()
             .filter_map(|entry| {
                 if let IndexEntry::Stream(info) = entry {
-                    Some(StreamInfo::from_lzma_stream_info(info))
+                    Some(StreamInfo::from_lzma_stream_info(&info))
                 } else {
                     None
                 }
@@ -77,7 +77,7 @@ impl FileInfo {
             .iter_blocks()
             .filter_map(|entry| {
                 if let IndexEntry::Block(info) = entry {
-                    Some(BlockInfo::from_lzma_block_info(info))
+                    Some(BlockInfo::from_lzma_block_info(&info))
                 } else {
                     None
                 }
@@ -106,7 +106,7 @@ pub struct StreamInfo {
 }
 
 impl StreamInfo {
-    fn from_lzma_stream_info(info: LzmaStreamInfo) -> Self {
+    fn from_lzma_stream_info(info: &LzmaStreamInfo) -> Self {
         Self {
             number: info.number,
             block_count: info.block_count,
@@ -139,7 +139,7 @@ pub struct BlockInfo {
 }
 
 impl BlockInfo {
-    fn from_lzma_block_info(info: LzmaBlockInfo) -> Self {
+    fn from_lzma_block_info(info: &LzmaBlockInfo) -> Self {
         Self {
             number_in_stream: info.number_in_stream,
             number_in_file: info.number_in_file,
@@ -180,7 +180,7 @@ fn read_stream_footer_at<R: Read + Seek>(
 }
 
 /// Returns `true` if the given padding word is all zero bytes.
-fn is_zero_padding_word(word: &[u8; STREAM_PADDING_WORD_SIZE]) -> bool {
+fn is_zero_padding_word(word: [u8; STREAM_PADDING_WORD_SIZE]) -> bool {
     word.iter().all(|b| *b == 0)
 }
 
@@ -193,7 +193,7 @@ fn consume_stream_padding<R: Read + Seek>(reader: &mut R, mut pos: u64) -> Resul
     while pos >= STREAM_PADDING_ALIGNMENT_BYTES {
         let mut word = [0u8; STREAM_PADDING_WORD_SIZE];
         read_exact_at(reader, pos - STREAM_PADDING_ALIGNMENT_BYTES, &mut word)?;
-        if is_zero_padding_word(&word) {
+        if is_zero_padding_word(word) {
             padding += STREAM_PADDING_ALIGNMENT_BYTES;
             pos -= STREAM_PADDING_ALIGNMENT_BYTES;
         } else {
@@ -317,7 +317,7 @@ pub fn extract_file_info<R: Read + Seek>(
         ));
     }
 
-    let memlimit_value = memlimit.map_or(u64::MAX, |v| v.get());
+    let memlimit_value = memlimit.map_or(u64::MAX, std::num::NonZero::get);
 
     // Parse concatenated Streams from the end of the file.
     let mut pos = file_size;

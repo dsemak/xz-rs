@@ -14,7 +14,7 @@ use xz_cli::{format_diagnostic_for_stderr, run_cli};
 
 const PROGRAM_NAME: &str = "xzcat";
 
-fn main() -> std::io::Result<()> {
+fn main() {
     let opts = XzCatOpts::parse();
     let config = opts.config();
 
@@ -28,6 +28,4 @@ fn main() -> std::io::Result<()> {
     if code != 0 {
         process::exit(code);
     }
-
-    Ok(())
 }

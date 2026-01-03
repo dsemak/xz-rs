@@ -35,12 +35,12 @@ impl Decoder {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::OptionsError`] if the decoder options are invalid.
-    /// Returns [`Error::MemError`] if memory allocation fails.
-    /// Returns [`Error::MemLimitError`] if the memory limit is exceeded.
-    /// Returns [`Error::FormatError`] if the input format is not recognized.
-    /// Returns [`Error::UnsupportedCheck`] if the integrity check type is not supported.
-    /// Returns [`Error::ProgError`] if the decoder is misused.
+    /// Returns [`crate::Error::OptionsError`] if the decoder options are invalid.
+    /// Returns [`crate::Error::MemError`] if memory allocation fails.
+    /// Returns [`crate::Error::MemLimitError`] if the memory limit is exceeded.
+    /// Returns [`crate::Error::FormatError`] if the input format is not recognized.
+    /// Returns [`crate::Error::UnsupportedCheck`] if the integrity check type is not supported.
+    /// Returns [`crate::Error::ProgError`] if the decoder is misused.
     ///
     /// # Returns
     /// Returns the new decoder if successful.
@@ -72,12 +72,12 @@ impl Decoder {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::OptionsError`] if the decoder options are invalid.
-    /// Returns [`Error::MemError`] if memory allocation fails.
-    /// Returns [`Error::MemLimitError`] if the memory limit is exceeded.
-    /// Returns [`Error::FormatError`] if the input format is not recognized.
-    /// Returns [`Error::UnsupportedCheck`] if the integrity check type is not supported.
-    /// Returns [`Error::ProgError`] if the decoder is misused.
+    /// Returns [`crate::Error::OptionsError`] if the decoder options are invalid.
+    /// Returns [`crate::Error::MemError`] if memory allocation fails.
+    /// Returns [`crate::Error::MemLimitError`] if the memory limit is exceeded.
+    /// Returns [`crate::Error::FormatError`] if the input format is not recognized.
+    /// Returns [`crate::Error::UnsupportedCheck`] if the integrity check type is not supported.
+    /// Returns [`crate::Error::ProgError`] if the decoder is misused.
     ///
     /// # Returns
     ///
@@ -109,12 +109,12 @@ impl Decoder {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::OptionsError`] if the decoder options are invalid.
-    /// Returns [`Error::MemError`] if memory allocation fails.
-    /// Returns [`Error::MemLimitError`] if the memory limit is exceeded.
-    /// Returns [`Error::FormatError`] if the input format is not recognized.
-    /// Returns [`Error::UnsupportedCheck`] if the integrity check type is not supported.
-    /// Returns [`Error::ProgError`] if the decoder is misused.
+    /// Returns [`crate::Error::OptionsError`] if the decoder options are invalid.
+    /// Returns [`crate::Error::MemError`] if memory allocation fails.
+    /// Returns [`crate::Error::MemLimitError`] if the memory limit is exceeded.
+    /// Returns [`crate::Error::FormatError`] if the input format is not recognized.
+    /// Returns [`crate::Error::UnsupportedCheck`] if the integrity check type is not supported.
+    /// Returns [`crate::Error::ProgError`] if the decoder is misused.
     ///
     /// # Returns
     /// Returns the new decoder if successful.
@@ -144,12 +144,12 @@ impl Decoder {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::OptionsError`] if the decoder options are invalid.
-    /// Returns [`Error::MemError`] if memory allocation fails.
-    /// Returns [`Error::MemLimitError`] if the memory limit is exceeded.
-    /// Returns [`Error::FormatError`] if the input format is not recognized.
-    /// Returns [`Error::UnsupportedCheck`] if the integrity check type is not supported.
-    /// Returns [`Error::ProgError`] if the decoder is misused.
+    /// Returns [`crate::Error::OptionsError`] if the decoder options are invalid.
+    /// Returns [`crate::Error::MemError`] if memory allocation fails.
+    /// Returns [`crate::Error::MemLimitError`] if the memory limit is exceeded.
+    /// Returns [`crate::Error::FormatError`] if the input format is not recognized.
+    /// Returns [`crate::Error::UnsupportedCheck`] if the integrity check type is not supported.
+    /// Returns [`crate::Error::ProgError`] if the decoder is misused.
     ///
     /// # Returns
     ///
@@ -176,10 +176,10 @@ impl Decoder {
     ///
     /// # Errors
     ///
-    /// Returns [`Error::BufError`] if no progress is possible (e.g., output buffer too small).
-    /// Returns [`Error::DataError`] if input data is corrupted.
-    /// Returns [`Error::MemError`] if memory allocation fails.
-    /// Returns [`Error::ProgError`] if the decoder is misused (e.g., trying to finish twice).
+    /// Returns [`crate::Error::BufError`] if no progress is possible (e.g., output buffer too small).
+    /// Returns [`crate::Error::DataError`] if input data is corrupted.
+    /// Returns [`crate::Error::MemError`] if memory allocation fails.
+    /// Returns [`crate::Error::ProgError`] if the decoder is misused (e.g., trying to finish twice).
     ///
     /// # Returns
     ///

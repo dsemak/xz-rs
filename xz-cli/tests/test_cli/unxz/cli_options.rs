@@ -90,7 +90,7 @@ add_test!(keep_long_option, async {
 
     // Both files should exist
     assert!(fixture.file_exists(FILE_NAME));
-    assert!(fixture.file_exists(&format!("{}.xz", FILE_NAME)));
+    assert!(fixture.file_exists(&format!("{FILE_NAME}.xz")));
 });
 
 // Test unxz with --force (long form)
@@ -132,20 +132,15 @@ add_test!(different_compression_levels, async {
 
         // Compress with specific level
         let output = fixture
-            .run_cargo("xz", &[&format!("-{}", level), &file_path])
+            .run_cargo("xz", &[&format!("-{level}"), &file_path])
             .await;
-        assert!(
-            output.status.success(),
-            "Compression level {} failed",
-            level
-        );
+        assert!(output.status.success(), "Compression level {level} failed");
 
         // Decompress with unxz (should work for any level)
         let output = fixture.run_cargo("unxz", &[&compressed_path]).await;
         assert!(
             output.status.success(),
-            "Decompression of level {} failed",
-            level
+            "Decompression of level {level} failed"
         );
 
         fixture.assert_files(&[FILE_NAME], &[&data]);
@@ -193,7 +188,7 @@ add_test!(combined_short_options, async {
 
     // Both files should exist
     assert!(fixture.file_exists(FILE_NAME));
-    assert!(fixture.file_exists(&format!("{}.xz", FILE_NAME)));
+    assert!(fixture.file_exists(&format!("{FILE_NAME}.xz")));
 });
 
 // Test --no-sparse option disables sparse output when decompressing to a file.

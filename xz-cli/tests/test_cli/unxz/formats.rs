@@ -89,16 +89,14 @@ add_test!(various_extensions, async {
         let output = fixture.run_cargo("xz", &[&file_path]).await;
         assert!(
             output.status.success(),
-            "Compression failed for {}",
-            file_name
+            "Compression failed for {file_name}"
         );
 
         // Decompress with unxz
         let output = fixture.run_cargo("unxz", &[&compressed_path]).await;
         assert!(
             output.status.success(),
-            "Decompression failed for {}",
-            file_name
+            "Decompression failed for {file_name}"
         );
 
         fixture.assert_files(&[file_name], &[data]);
@@ -206,13 +204,13 @@ add_test!(double_compression, async {
     // Second compression
     let output = fixture.run_cargo("xz", &["-f", &compressed_path]).await;
     assert!(output.status.success());
-    assert!(fixture.file_exists(&format!("{}.xz.xz", FILE_NAME)));
+    assert!(fixture.file_exists(&format!("{FILE_NAME}.xz.xz")));
 
     // First decompression
-    let double_compressed = fixture.path(&format!("{}.xz.xz", FILE_NAME));
+    let double_compressed = fixture.path(&format!("{FILE_NAME}.xz.xz"));
     let output = fixture.run_cargo("unxz", &[&double_compressed]).await;
     assert!(output.status.success());
-    assert!(fixture.file_exists(&format!("{}.xz", FILE_NAME)));
+    assert!(fixture.file_exists(&format!("{FILE_NAME}.xz")));
 
     // Second decompression
     let output = fixture.run_cargo("unxz", &[&compressed_path]).await;

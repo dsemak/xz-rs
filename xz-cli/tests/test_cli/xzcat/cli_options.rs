@@ -104,13 +104,13 @@ add_test!(different_compression_levels, async {
 
         // Compress at specific level
         let output = fixture
-            .run_cargo("xz", &[&format!("-{}", level), &file_path])
+            .run_cargo("xz", &[&format!("-{level}"), &file_path])
             .await;
         assert!(output.status.success());
 
         // xzcat should decompress any level
         let output = fixture.run_cargo("xzcat", &[&compressed_path]).await;
-        assert!(output.status.success(), "Failed for level {}", level);
+        assert!(output.status.success(), "Failed for level {level}");
         assert!(output.stdout_raw == data);
     }
 });
@@ -135,7 +135,13 @@ add_test!(file_order, async {
 
     // Compress all
     let output = fixture
-        .run_cargo("xz", &paths.iter().map(|s| s.as_str()).collect::<Vec<_>>())
+        .run_cargo(
+            "xz",
+            &paths
+                .iter()
+                .map(std::string::String::as_str)
+                .collect::<Vec<_>>(),
+        )
         .await;
     assert!(output.status.success());
 
@@ -145,7 +151,7 @@ add_test!(file_order, async {
             "xzcat",
             &compressed_paths
                 .iter()
-                .map(|s| s.as_str())
+                .map(std::string::String::as_str)
                 .collect::<Vec<_>>(),
         )
         .await;

@@ -81,21 +81,19 @@ add_test!(different_levels_compatibility, async {
 
         // Compress with system xz at specific level if available
         if let Some(output) = fixture
-            .run_system("xz", &[&format!("-{}", level), &file_path])
+            .run_system("xz", &[&format!("-{level}"), &file_path])
             .await
         {
             assert!(
                 output.status.success(),
-                "System compression at level {} failed",
-                level
+                "System compression at level {level} failed"
             );
 
             // Decompress with our unxz
             let output = fixture.run_cargo("unxz", &[&compressed_path]).await;
             assert!(
                 output.status.success(),
-                "Our decompression of level {} failed",
-                level
+                "Our decompression of level {level} failed"
             );
 
             fixture.assert_files(&[FILE_NAME], &[&data]);
@@ -170,7 +168,7 @@ add_test!(bidirectional_keep_compatibility, async {
             .await;
         assert!(output.status.success());
         assert!(fixture.file_exists(FILE_NAME_1));
-        assert!(fixture.file_exists(&format!("{}.xz", FILE_NAME_1)));
+        assert!(fixture.file_exists(&format!("{FILE_NAME_1}.xz")));
 
         // Compress with our xz
         let output = fixture.run_cargo("xz", &["-k", "-f", &file_path_2]).await;
@@ -183,7 +181,7 @@ add_test!(bidirectional_keep_compatibility, async {
         {
             assert!(output.status.success());
             assert!(fixture.file_exists(FILE_NAME_2));
-            assert!(fixture.file_exists(&format!("{}.xz", FILE_NAME_2)));
+            assert!(fixture.file_exists(&format!("{FILE_NAME_2}.xz")));
         }
     }
 });
@@ -202,15 +200,11 @@ add_test!(format_compatibility, async {
 
         // Compress with system xz if available
         if let Some(output) = fixture.run_system("xz", &[&file_path]).await {
-            assert!(
-                output.status.success(),
-                "System xz failed for {}",
-                file_name
-            );
+            assert!(output.status.success(), "System xz failed for {file_name}");
 
             // Decompress with our unxz
             let output = fixture.run_cargo("unxz", &[&compressed_path]).await;
-            assert!(output.status.success(), "Our unxz failed for {}", file_name);
+            assert!(output.status.success(), "Our unxz failed for {file_name}");
 
             fixture.assert_files(&[file_name], &[data]);
         }
@@ -236,6 +230,6 @@ add_test!(test_integrity_compatibility, async {
         assert!(output.status.success());
 
         // File should still be compressed
-        assert!(fixture.file_exists(&format!("{}.xz", FILE_NAME)));
+        assert!(fixture.file_exists(&format!("{FILE_NAME}.xz")));
     }
 });

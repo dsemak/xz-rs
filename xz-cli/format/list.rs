@@ -66,7 +66,8 @@ fn write_stdout_line(line: &str) -> Result<()> {
     use std::io::Write;
 
     let mut out = io::stdout().lock();
-    writeln!(out, "{line}").map_err(|source| DiagnosticCause::from(Error::WriteOutput { source }))?;
+    writeln!(out, "{line}")
+        .map_err(|source| DiagnosticCause::from(Error::WriteOutput { source }))?;
     Ok(())
 }
 
@@ -228,7 +229,8 @@ pub(crate) fn write_verbose_report(
     )
     .map_err(|source| DiagnosticCause::from(Error::WriteOutput { source }))?;
 
-    writeln!(out, "  Streams:").map_err(|source| DiagnosticCause::from(Error::WriteOutput { source }))?;
+    writeln!(out, "  Streams:")
+        .map_err(|source| DiagnosticCause::from(Error::WriteOutput { source }))?;
     writeln!(
         out,
         "    Stream    Blocks      CompOffset    UncompOffset        CompSize      UncompSize  Ratio  Check      Padding"
@@ -253,7 +255,8 @@ pub(crate) fn write_verbose_report(
         .map_err(|source| DiagnosticCause::from(Error::WriteOutput { source }))?;
     }
 
-    writeln!(out, "  Blocks:").map_err(|source| DiagnosticCause::from(Error::WriteOutput { source }))?;
+    writeln!(out, "  Blocks:")
+        .map_err(|source| DiagnosticCause::from(Error::WriteOutput { source }))?;
     writeln!(
         out,
         "    Stream     Block      CompOffset    UncompOffset       TotalSize      UncompSize  Ratio  Check"
@@ -261,14 +264,14 @@ pub(crate) fn write_verbose_report(
     .map_err(|source| DiagnosticCause::from(Error::WriteOutput { source }))?;
 
     let mut stream_idx: usize = 0;
-    let mut remaining_in_stream: u64 = streams.get(stream_idx).map(|s| s.block_count).unwrap_or(0);
+    let mut remaining_in_stream: u64 = streams.get(stream_idx).map_or(0, |s| s.block_count);
 
     for block in blocks {
         while remaining_in_stream == 0 && stream_idx + 1 < streams.len() {
             stream_idx += 1;
             remaining_in_stream = streams[stream_idx].block_count;
         }
-        let stream_number = streams.get(stream_idx).map(|s| s.number).unwrap_or(0);
+        let stream_number = streams.get(stream_idx).map_or(0, |s| s.number);
         remaining_in_stream = remaining_in_stream.saturating_sub(1);
 
         let block_ratio = math::ratio_fraction(block.total_size, block.uncompressed_size);

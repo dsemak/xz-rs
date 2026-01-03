@@ -189,8 +189,6 @@ where
                 }
 
                 pending_len += read;
-                // Continue processing with the extended buffer window.
-                continue;
             }
         }
 
@@ -305,13 +303,6 @@ fn finish_decoder_sync<W: Write>(
         // it will never finish.
         if !pending.is_empty() && used == 0 && written == 0 {
             break;
-        }
-
-        // Once pending input has been fully consumed, keep calling with empty input
-        // to let the decoder flush internal state (liblzma may need an extra call
-        // to transition to StreamEnd). We rely on MAX_SPINS to avoid infinite loops.
-        if pending.is_empty() && used == 0 && written == 0 {
-            continue;
         }
     }
 

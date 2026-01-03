@@ -292,7 +292,7 @@ pub(crate) fn lzma_index_stream_flags(index: &mut Index, flags: &StreamFlags) ->
     // SAFETY:
     // - `index.as_mut_ptr()` is a valid pointer to an `lzma_index` owned by `Index`.
     // - `raw` is a properly initialized `lzma_stream_flags` value.
-    let ret = unsafe { liblzma_sys::lzma_index_stream_flags(index.as_mut_ptr(), &raw) };
+    let ret = unsafe { liblzma_sys::lzma_index_stream_flags(index.as_mut_ptr(), &raw const raw) };
     result_from_lzma_ret(ret, ())
 }
 

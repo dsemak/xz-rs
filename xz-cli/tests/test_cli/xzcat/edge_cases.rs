@@ -179,13 +179,13 @@ add_test!(many_small_files, async {
     let mut compressed_paths = Vec::new();
 
     for i in 0..NUM_FILES {
-        let name = format!("file{}.txt", i);
+        let name = format!("file{i}.txt");
         file_names.push(name.clone());
-        file_data.push(format!("Content {}", i).into_bytes());
+        file_data.push(format!("Content {i}").into_bytes());
     }
 
-    let data_refs: Vec<&[u8]> = file_data.iter().map(|v| v.as_slice()).collect();
-    let name_refs: Vec<&str> = file_names.iter().map(|s| s.as_str()).collect();
+    let data_refs: Vec<&[u8]> = file_data.iter().map(std::vec::Vec::as_slice).collect();
+    let name_refs: Vec<&str> = file_names.iter().map(std::string::String::as_str).collect();
 
     let mut fixture = Fixture::with_files(&name_refs, &data_refs);
 
@@ -198,7 +198,10 @@ add_test!(many_small_files, async {
     }
 
     // xzcat all files
-    let compressed_refs: Vec<&str> = compressed_paths.iter().map(|s| s.as_str()).collect();
+    let compressed_refs: Vec<&str> = compressed_paths
+        .iter()
+        .map(std::string::String::as_str)
+        .collect();
     let output = fixture.run_cargo("xzcat", &compressed_refs).await;
     assert!(output.status.success());
 
@@ -217,10 +220,8 @@ add_test!(dash_reads_stdin_in_middle, async {
     let data_2 = b"file2 data";
     let stdin_data = b"stdin data";
 
-    let mut fixture = Fixture::with_files(
-        &[FILE_1, FILE_2, STDIN_FILE],
-        &[data_1, data_2, stdin_data],
-    );
+    let mut fixture =
+        Fixture::with_files(&[FILE_1, FILE_2, STDIN_FILE], &[data_1, data_2, stdin_data]);
 
     // Prepare file inputs as .xz files on disk.
     let file_1_path = fixture.path(FILE_1);

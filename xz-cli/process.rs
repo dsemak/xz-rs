@@ -145,9 +145,9 @@ pub fn process_file(input_path: &str, config: &CliConfig) -> Result<()> {
             decompress_file(input, io::sink(), config)?;
             if config.verbose || config.robot {
                 if config.robot {
-                    println!("OK {}", input_path);
+                    println!("OK {input_path}");
                 } else {
-                    eprintln!("Test successful: {}", input_path);
+                    eprintln!("Test successful: {input_path}");
                 }
             }
         }

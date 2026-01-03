@@ -14,7 +14,7 @@ use xz_cli::{format_diagnostic_for_stderr, run_cli};
 
 const PROGRAM_NAME: &str = "xz";
 
-fn main() -> std::io::Result<()> {
+fn main() {
     let opts = XzOpts::parse();
 
     let config = match opts.config() {
@@ -51,8 +51,6 @@ fn main() -> std::io::Result<()> {
     if code != 0 {
         process::exit(code);
     }
-
-    Ok(())
 }
 
 fn resolve_input_files(opts: &XzOpts) -> Result<Vec<String>> {

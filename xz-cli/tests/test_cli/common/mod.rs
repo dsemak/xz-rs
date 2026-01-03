@@ -37,11 +37,10 @@ impl BinaryType {
     fn get_path(&self) -> String {
         match self {
             BinaryType::Cargo(name) => {
-                let bin_env = format!("CARGO_BIN_EXE_{}", name);
+                let bin_env = format!("CARGO_BIN_EXE_{name}");
                 let path = Self::locate_cargo_binary(name, &bin_env).unwrap_or_else(|| {
                     panic!(
-                        "Binary '{}' not found. Set '{}' or build the project binaries.",
-                        name, bin_env
+                        "Binary '{name}' not found. Set '{bin_env}' or build the project binaries."
                     )
                 });
                 path.to_string_lossy().into_owned()
@@ -249,6 +248,10 @@ pub struct Output {
 }
 
 /// Compare two command outputs for equality
+///
+/// # Panics
+///
+/// Panics if the outputs differ.
 pub fn compare_outputs(output_1: &Output, output_2: &Output) {
     assert_eq!(output_1.status.success(), output_2.status.success());
     assert!(output_1.stdout_raw == output_2.stdout_raw);
@@ -263,6 +266,11 @@ pub struct Fixture {
 
 impl Fixture {
     /// Create fixture with multiple files
+    ///
+    /// # Panics
+    ///
+    /// Panics if the temporary directory cannot be created or if any fixture file
+    /// cannot be written.
     pub fn with_files(names: &[&str], contents: &[&[u8]]) -> Self {
         let root_dir = tempfile::TempDir::new().unwrap();
         let file_paths: Vec<PathBuf> = names
@@ -277,6 +285,11 @@ impl Fixture {
     }
 
     /// Create fixture with single file
+    ///
+    /// # Panics
+    ///
+    /// Panics if the temporary directory cannot be created or if the fixture file
+    /// cannot be written.
     pub fn with_file(name: &str, contents: &[u8]) -> Self {
         let root_dir = tempfile::TempDir::new().unwrap();
         let path = root_dir.path().join(name);
@@ -296,6 +309,10 @@ impl Fixture {
     }
 
     /// Remove a file from the fixture
+    ///
+    /// # Panics
+    ///
+    /// Panics if the file cannot be removed.
     pub fn remove_file(&self, name: &str) {
         let path = self.root_dir.path().join(name);
         fs::remove_file(path).unwrap();
@@ -321,6 +338,11 @@ impl Fixture {
     }
 
     /// Assert that files have expected contents
+    ///
+    /// # Panics
+    ///
+    /// Panics if any file cannot be read or if its contents don't match the
+    /// expected bytes.
     pub fn assert_files(&self, names: &[&str], contents: &[&[u8]]) {
         for (name, expected_contents) in names.iter().zip(contents) {
             let path = self.root_dir.path().join(name);
@@ -352,10 +374,9 @@ impl Fixture {
 
         if let Some(stdin_bytes) = stdin_bytes {
             if let Some(ref mut stdin) = child.stdin {
-                stdin
-                    .write_all(&stdin_bytes)
-                    .await
-                    .unwrap_or_else(|_| panic!("failed write to stdin ({} bytes)", stdin_bytes.len()));
+                stdin.write_all(&stdin_bytes).await.unwrap_or_else(|_| {
+                    panic!("failed write to stdin ({} bytes)", stdin_bytes.len())
+                });
             }
         }
 
@@ -394,6 +415,11 @@ impl Fixture {
     }
 
     /// Run a binary with the specified arguments and optional stdin input
+    ///
+    /// # Panics
+    ///
+    /// Panics if the process cannot be spawned, if writing to stdin fails, or if
+    /// awaiting process output fails.
     pub async fn run_with_stdin(
         &mut self,
         binary_type: BinaryType,
@@ -417,6 +443,11 @@ impl Fixture {
     }
 
     /// Run a binary with raw stdin bytes.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the process cannot be spawned, if writing to stdin fails, or if
+    /// awaiting process output fails.
     pub async fn run_with_stdin_raw(
         &mut self,
         binary_type: BinaryType,

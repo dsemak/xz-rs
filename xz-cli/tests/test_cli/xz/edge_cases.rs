@@ -81,8 +81,8 @@ add_test!(binary_all_bytes, async {
 
     // Create binary data with all possible byte values
     let mut binary_data = Vec::new();
-    for i in 0..256 {
-        binary_data.push(i as u8);
+    for i in 0x00..0xFF {
+        binary_data.push(i);
     }
     // Repeat pattern multiple times
     for _ in 0..1000 {
@@ -196,7 +196,7 @@ add_test!(already_compressed, async {
     assert!(output.status.success());
 
     // Should create .xz.xz file
-    assert!(fixture.file_exists(&format!("{}.xz.xz", FILE_NAME)));
+    assert!(fixture.file_exists(&format!("{FILE_NAME}.xz.xz")));
 });
 
 // Test decompression of non-existent file
