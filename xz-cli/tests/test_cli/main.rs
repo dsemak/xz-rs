@@ -6,6 +6,7 @@ mod unxz;
 mod xz;
 mod xzcat;
 mod xzdec;
+mod xzdiff;
 
 const KB: usize = 1024;
 const MB: usize = 1024 * KB;
