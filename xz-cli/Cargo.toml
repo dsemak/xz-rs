@@ -63,11 +63,11 @@ path = "bin/xzmore/main.rs"
 [dependencies]
 clap = { version = "4.0", features = ["derive", "color"] }
 thiserror = "2.0"
+tempfile = "3.8"
 tokio = { workspace = true }
 xz-core = { path = "../xz-core" }
 
 [dev-dependencies]
-tempfile = "3.8"
 which = "4.4"
 
 [[test]]
