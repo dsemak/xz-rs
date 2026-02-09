@@ -5,6 +5,7 @@ mod unlzma;
 mod unxz;
 mod xz;
 mod xzcat;
+mod xzcmp;
 mod xzdec;
 mod xzdiff;
 
