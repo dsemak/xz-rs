@@ -4,6 +4,8 @@ use std::env;
 use std::ffi::{OsStr, OsString};
 use std::path::Path;
 
+use xz_cli::has_compression_extension;
+
 /// Parsed command-line arguments for `xzgrep`.
 #[derive(Debug, Clone)]
 #[allow(clippy::struct_excessive_bools)]
@@ -131,7 +133,14 @@ pub fn parse_args(argv0: &OsStr, args: &[OsString]) -> Result<ParsedArgs, String
             continue;
         }
 
-        // First non-option is PATTERN (unless already provided via -e/-f/--regexp/--file).
+        // If only one argument remains and it looks like a compressed file or a path,
+        // treat it as a FILE operand instead of a pattern. Use '--' to force as pattern.
+        if it.peek().is_none()
+            && (has_compression_extension(Path::new(&arg)) || looks_like_path_operand(&arg))
+        {
+            files.push(arg);
+            continue;
+        }
         grep_args.push(OsString::from("-e"));
         grep_args.push(arg);
         consumed_bare_pattern = true;
@@ -194,6 +203,13 @@ fn track_filename_flags(arg: &OsStr, no_filename: &mut bool, with_filename: &mut
 fn is_short_opt_with_inline_arg(arg: &OsStr, opt: u8) -> bool {
     let bytes = arg.as_encoded_bytes();
     bytes.len() > 2 && bytes[0] == b'-' && bytes[1] == opt
+}
+
+/// Return `true` if `arg` looks like a path operand (contains a path separator).
+fn looks_like_path_operand(arg: &OsStr) -> bool {
+    arg.as_encoded_bytes()
+        .iter()
+        .any(|&b| b == b'/' || b == b'\\')
 }
 
 #[cfg(test)]
