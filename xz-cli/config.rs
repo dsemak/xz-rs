@@ -43,6 +43,8 @@ pub struct CliConfig {
     pub verbose: bool,
     /// Quiet mode level (0 = normal, 1 = suppress warnings, 2+ = suppress errors too)
     pub quiet: u8,
+    /// Suppress warnings and don't let them affect the exit status.
+    pub no_warn: bool,
     /// Compression level (0-9)
     pub level: Option<u32>,
     /// Number of threads to use
@@ -78,6 +80,7 @@ impl Default for CliConfig {
             stdout: false,
             verbose: false,
             quiet: 0,
+            no_warn: false,
             level: None,
             threads: None,
             memory_limit: None,

@@ -94,3 +94,8 @@ impl From<Action> for liblzma_sys::lzma_action {
         }
     }
 }
+
+/// Returns `true` if the linked liblzma supports the given check ID.
+pub fn lzma_check_is_supported(check_id: u32) -> bool {
+    ffi::lzma_check_is_supported(check_id)
+}

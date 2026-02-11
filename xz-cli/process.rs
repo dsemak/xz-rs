@@ -144,11 +144,21 @@ pub fn process_file(input_path: &str, config: &CliConfig) -> Result<()> {
             compress_file(input, output, config)?;
         }
         OperationMode::Decompress | OperationMode::Cat => {
-            decompress_file(input, output, config)?;
+            match decompress_file(input, output, config) {
+                Ok(()) => (),
+                Err(DiagnosticCause::Warning(
+                    w @ crate::error::Warning::UnsupportedCheck { .. },
+                )) => {
+                    cleanup_input_file(input_path, config)?;
+                    return Err(DiagnosticCause::Warning(w));
+                }
+                Err(other) => return Err(other),
+            }
         }
         OperationMode::Test => {
             // In test mode, decompress but discard output
             decompress_file(input, io::sink(), config)?;
+
             if config.verbose || config.robot {
                 if config.robot {
                     println!("OK {input_path}");

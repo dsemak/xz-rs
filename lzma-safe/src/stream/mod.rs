@@ -20,6 +20,15 @@ use crate::{Decoder, Encoder, FileInfoDecoder, IndexDecoder, Result};
 /// Size of the XZ stream header in bytes (12 bytes).
 pub const HEADER_SIZE: usize = liblzma_sys::LZMA_STREAM_HEADER_SIZE as usize;
 
+/// Magic bytes at the beginning of an XZ Stream Header.
+pub const HEADER_MAGIC: [u8; 6] = [0xFD, b'7', b'z', b'X', b'Z', 0x00];
+
+/// Minimum size of a valid XZ block header in bytes (8 bytes).
+pub const BLOCK_HEADER_SIZE_MIN: usize = liblzma_sys::LZMA_BLOCK_HEADER_SIZE_MIN as usize;
+
+/// Maximum size of a valid XZ block header in bytes (1024 bytes).
+pub const BLOCK_HEADER_SIZE_MAX: usize = liblzma_sys::LZMA_BLOCK_HEADER_SIZE_MAX as usize;
+
 /// Safe wrapper around `lzma_stream` with optional custom allocator.
 pub struct Stream {
     /// The raw `lzma_stream` struct from liblzma.

@@ -64,6 +64,10 @@ pub struct XzOpts {
     #[arg(short = 'q', long = "quiet", conflicts_with = "verbose", action = clap::ArgAction::Count)]
     pub quiet: u8,
 
+    /// Don't warn about unsupported check types.
+    #[arg(short = 'Q', long = "no-warn")]
+    pub no_warn: bool,
+
     /// Compression preset level 0 (no compression, fastest)
     #[arg(short = '0', group = "level")]
     pub level_0: bool,
@@ -263,6 +267,7 @@ impl XzOpts {
             stdout: self.stdout,
             verbose: self.verbose,
             quiet: self.quiet,
+            no_warn: self.no_warn,
             level: self.compression_level().map(u32::from),
             threads: self.threads,
             memory_limit: self.memory,
@@ -296,6 +301,7 @@ mod tests {
             keep: false,
             verbose: false,
             quiet: 0,
+            no_warn: false,
             level_0: false,
             level_1: false,
             level_2: false,

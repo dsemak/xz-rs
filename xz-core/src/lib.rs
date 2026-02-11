@@ -150,6 +150,7 @@
 
 mod buffer;
 mod error;
+mod header;
 mod threading;
 
 pub mod config;
@@ -158,6 +159,10 @@ pub mod options;
 pub mod pipeline;
 
 pub use crate::error::{BackendError, Error, Result};
+pub use crate::header::{
+    detect_unsupported_xz_check_id, read_xz_stream_header_prefix, XZ_STREAM_HEADER_MAGIC,
+    XZ_STREAM_HEADER_SIZE,
+};
 pub use crate::threading::Threading;
 pub use buffer::{Allocator, Buffer, Deallocator, DeallocatorFn, GlobalAllocator};
 

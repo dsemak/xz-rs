@@ -368,3 +368,10 @@ pub(crate) fn lzma_memlimit_set(memlimit: u64, stream: &mut Stream) -> Result<()
     let ret = unsafe { liblzma_sys::lzma_memlimit_set(stream.lzma_stream(), memlimit) };
     result_from_lzma_ret(ret, ())
 }
+
+/// Returns `true` if the linked liblzma supports the given check ID.
+pub(crate) fn lzma_check_is_supported(check_id: u32) -> bool {
+    // SAFETY: `lzma_check_is_supported` is a pure function that doesn't keep the
+    // pointer; it only inspects the passed check ID.
+    unsafe { liblzma_sys::lzma_check_is_supported(check_id) != 0 }
+}

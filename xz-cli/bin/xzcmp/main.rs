@@ -57,6 +57,7 @@ fn run() -> Result<i32, String> {
     // Prepare (possibly decompressed) file paths for cmp.
     let config = CliConfig {
         mode: OperationMode::Decompress,
+        no_warn: false,
         ..CliConfig::default()
     };
 

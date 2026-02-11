@@ -205,6 +205,13 @@ pub enum Warning {
         /// The suffix that already exists
         suffix: String,
     },
+
+    /// The input uses an integrity check type that isn't supported by the linked liblzma.
+    #[error("Unsupported type of integrity check (Check ID {check_id})")]
+    UnsupportedCheck {
+        /// Integrity check ID from the XZ Stream Header.
+        check_id: u32,
+    },
 }
 
 /// Main error type for XZ CLI operations.
