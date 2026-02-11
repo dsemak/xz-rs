@@ -63,6 +63,7 @@ impl XzCatOpts {
             stdout: true,
             verbose: self.verbose,
             quiet: self.quiet,
+            no_warn: false,
             level: None,
             threads: self.threads,
             memory_limit: self.memory,

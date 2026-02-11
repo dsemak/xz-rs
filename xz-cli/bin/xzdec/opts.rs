@@ -70,6 +70,7 @@ impl XzDecOpts {
             stdout: true,
             verbose: false,
             quiet: self.quiet,
+            no_warn: true,
             level: None,
             threads: None,
             memory_limit: self.memory,

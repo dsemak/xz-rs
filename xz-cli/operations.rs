@@ -2,18 +2,19 @@
 
 use std::fs::File;
 use std::io;
+use std::io::Read as _;
 
 use xz_core::{
     config::EncodeFormat,
-    file_info,
+    detect_unsupported_xz_check_id, file_info,
     options::lzma1::Lzma1Options,
     options::{Compression, CompressionOptions, DecompressionOptions, Flags},
     pipeline::{compress, decompress},
-    ratio, Error as CoreError,
+    ratio, read_xz_stream_header_prefix, Error as CoreError,
 };
 
 use crate::config::CliConfig;
-use crate::error::{DiagnosticCause, Error, IoErrorNoCode, Result};
+use crate::error::{DiagnosticCause, Error, IoErrorNoCode, Result, Warning};
 use crate::format::list::{self, ListOutputContext, ListSummary};
 use crate::lzma1::parse_lzma1_options;
 
@@ -236,6 +237,18 @@ pub fn decompress_file(
     mut output: impl io::Write,
     config: &CliConfig,
 ) -> Result<()> {
+    // Read and preserve a small prefix so we can inspect the XZ Stream Header without
+    // losing bytes from the actual decode stream.
+    let prefix = read_xz_stream_header_prefix(&mut input).map_err(|source| {
+        DiagnosticCause::from(Error::OpenInput {
+            source: IoErrorNoCode::new(source),
+        })
+    })?;
+
+    let unsupported_check_id = detect_unsupported_xz_check_id(&prefix);
+
+    let mut input = io::Cursor::new(prefix).chain(input);
+
     let mut options = DecompressionOptions::default();
 
     // Set thread count if specified
@@ -297,6 +310,16 @@ pub fn decompress_file(
                 "Decompressed {} bytes to {} bytes ({:.1}% expansion)",
                 summary.bytes_read, summary.bytes_written, ratio
             );
+        }
+    }
+
+    if let Some(check_id) = unsupported_check_id {
+        if !config.no_warn {
+            // Decoding can succeed but unsupported integrity
+            // check type must be reported as a warning (exit code 2).
+            return Err(DiagnosticCause::from(Warning::UnsupportedCheck {
+                check_id,
+            }));
         }
     }
 
