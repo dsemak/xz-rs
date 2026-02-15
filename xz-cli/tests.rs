@@ -102,6 +102,22 @@ fn generate_output_filename_compress_basic() {
     assert_eq!(output, PathBuf::from("test.xz"));
 }
 
+/// Compression output generation preserves trailing dots like `xz` does.
+#[test]
+fn generate_output_filename_compress_trailing_dots() {
+    let input = Path::new("file.");
+    let output =
+        generate_output_filename(input, OperationMode::Compress, None, XZ_EXTENSION, false)
+            .unwrap();
+    assert_eq!(output, PathBuf::from("file..xz"));
+
+    let input = Path::new("file..");
+    let output =
+        generate_output_filename(input, OperationMode::Compress, None, XZ_EXTENSION, false)
+            .unwrap();
+    assert_eq!(output, PathBuf::from("file...xz"));
+}
+
 /// Test compression with existing .xz extension
 #[test]
 fn generate_output_filename_compress_double_extension() {
