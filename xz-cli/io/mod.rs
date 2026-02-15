@@ -83,11 +83,7 @@ pub fn generate_output_filename(
             }
 
             // If the file has an extension, append the compression extension after it
-            match input
-                .extension()
-                .and_then(OsStr::to_str)
-                .filter(|ext| !ext.is_empty())
-            {
+            match input.extension().and_then(OsStr::to_str) {
                 Some(ext) => {
                     let new_ext = format!("{ext}.{extension}");
                     output.set_extension(new_ext);
