@@ -364,18 +364,20 @@ impl Fixture {
         &mut self,
         binary_type: &BinaryType,
         args: &[&str],
+        env_vars: &[(&str, &str)],
         stdin_bytes: Option<Vec<u8>>,
         kill_receiver: oneshot::Receiver<()>,
     ) -> Output {
         let bin_path = binary_type.get_path();
-        let mut child = tokio::process::Command::new(&bin_path)
+        let mut command = tokio::process::Command::new(&bin_path);
+        command
             .args(args)
+            .envs(env_vars.iter().copied())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .stdin(Stdio::piped())
-            .kill_on_drop(true)
-            .spawn()
-            .unwrap();
+            .kill_on_drop(true);
+        let mut child = command.spawn().unwrap();
 
         if let Some(stdin_bytes) = stdin_bytes {
             if let Some(ref mut stdin) = child.stdin {
@@ -446,7 +448,7 @@ impl Fixture {
 
         let (kill_sender, kill_receiver) = oneshot::channel();
         let output = self
-            .run_until_killed(&binary_type, args, stdin_bytes, kill_receiver)
+            .run_until_killed(&binary_type, args, &[], stdin_bytes, kill_receiver)
             .await;
         drop(kill_sender);
         output
@@ -466,14 +468,40 @@ impl Fixture {
     ) -> Output {
         let (kill_sender, kill_receiver) = oneshot::channel();
         let output = self
-            .run_until_killed(&binary_type, args, Some(stdin.to_vec()), kill_receiver)
+            .run_until_killed(&binary_type, args, &[], Some(stdin.to_vec()), kill_receiver)
             .await;
         drop(kill_sender);
         output
     }
 
+    /// Run a cargo binary with command-specific environment variables.
+    pub async fn run_cargo_with_env(
+        &mut self,
+        name: &str,
+        args: &[&str],
+        env_vars: &[(&str, &str)],
+    ) -> Output {
+        self.run_with_env(BinaryType::cargo(name), args, env_vars)
+            .await
+    }
+
     /// Run a binary with the specified arguments
     async fn run(&mut self, binary_type: BinaryType, args: &[&str]) -> Output {
         self.run_with_stdin(binary_type, args, None).await
+    }
+
+    /// Run a binary with the specified arguments and environment variables.
+    async fn run_with_env(
+        &mut self,
+        binary_type: BinaryType,
+        args: &[&str],
+        env_vars: &[(&str, &str)],
+    ) -> Output {
+        let (kill_sender, kill_receiver) = oneshot::channel();
+        let output = self
+            .run_until_killed(&binary_type, args, env_vars, None, kill_receiver)
+            .await;
+        drop(kill_sender);
+        output
     }
 }
