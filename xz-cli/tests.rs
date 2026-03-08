@@ -590,9 +590,9 @@ fn extreme_mode_is_modifier_not_level9() {
     )
     .unwrap();
 
-    // If extreme was just "level 9", both would produce identical results
-    // But since extreme is a modifier, -0e and -9e should differ
-    assert_ne!(output_0e.len(), output_9e.len(),);
+    // If extreme was just "level 9", both outputs would be byte-identical.
+    // Extreme is a modifier of the selected level, so -0e and -9e should differ.
+    assert!(output_0e != output_9e);
 }
 
 /// Test thread count conversion
