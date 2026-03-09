@@ -6,8 +6,10 @@ use tokio::io::AsyncWriteExt;
 use tokio::sync::oneshot;
 
 mod data;
+mod vectors;
 
 pub use data::{generate_random_data, BINARY_DATA, REPETITIVE_DATA, SAMPLE_TEXT};
+pub use vectors::Vector;
 
 /// Type of binary to execute
 #[derive(Debug, Clone)]
@@ -265,6 +267,30 @@ pub struct Fixture {
 }
 
 impl Fixture {
+    /// Create fixture with vectors
+    ///
+    /// # Panics
+    ///
+    /// Panics if the temporary directory cannot be created or if any vector cannot be written.
+    pub fn with_vectors(vectors: &[Vector]) -> Self {
+        let root_dir = tempfile::TempDir::new().unwrap();
+        for vector in vectors {
+            vector.copy_to(root_dir.path());
+        }
+        Self { root_dir }
+    }
+
+    /// Create fixture with a single vector
+    ///
+    /// # Panics
+    ///
+    /// Panics if the temporary directory cannot be created or if the vector cannot be written.
+    pub fn with_vector(vector: &Vector) -> Self {
+        let root_dir = tempfile::TempDir::new().unwrap();
+        vector.copy_to(root_dir.path());
+        Self { root_dir }
+    }
+
     /// Create fixture with multiple files
     ///
     /// # Panics
