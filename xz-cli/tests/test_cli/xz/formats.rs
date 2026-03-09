@@ -194,6 +194,29 @@ add_test!(lzma_format_via_xz, async {
     fixture.assert_files(&[FILE_NAME], &[data]);
 });
 
+// Test raw mode with `--lzma1` is rejected in file mode.
+add_test!(raw_format_with_suffix_rejected, async {
+    const FILE_NAME: &str = "raw_suffix.txt";
+
+    let data = SAMPLE_TEXT.as_bytes();
+    let mut fixture = Fixture::with_file(FILE_NAME, data);
+
+    let file_path = fixture.path(FILE_NAME);
+    let output = fixture
+        .run_cargo(
+            "xz",
+            &[
+                "-k",
+                "--format=raw",
+                "--lzma1=preset=0",
+                "--suffix=.foo",
+                &file_path,
+            ],
+        )
+        .await;
+    assert!(!output.status.success());
+});
+
 // Test file already with .xz extension
 add_test!(already_xz_extension, async {
     const FILE_NAME: &str = "file.xz";

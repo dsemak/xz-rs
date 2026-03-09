@@ -15,6 +15,14 @@ fn parse_memory_limit_basic_units() {
     assert_eq!(parse_memory_limit("1G").unwrap(), 1024 * 1024 * 1024);
 }
 
+/// Test binary unit aliases accepted by upstream xz memory limits.
+#[test]
+fn parse_memory_limit_binary_unit_aliases() {
+    assert_eq!(parse_memory_limit("1KiB").unwrap(), 1024);
+    assert_eq!(parse_memory_limit("1MiB").unwrap(), 1024 * 1024);
+    assert_eq!(parse_memory_limit("1GiB").unwrap(), 1024 * 1024 * 1024);
+}
+
 /// Test case insensitivity for memory limit suffixes
 #[test]
 fn parse_memory_limit_case_insensitive() {

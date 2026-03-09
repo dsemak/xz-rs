@@ -180,12 +180,12 @@ pub fn process_file(input_path: &str, config: &CliConfig) -> Result<()> {
 
 /// Parses a memory limit string with an optional size suffix.
 ///
-/// Accepts numeric values with optional suffixes: `K` (KiB), `M` (MiB), or `G` (GiB).
+/// Accepts numeric values with optional suffixes: `K`/`KiB`, `M`/`MiB`, or `G`/`GiB`.
 /// All suffixes are case-insensitive. Values without a suffix are interpreted as bytes.
 ///
 /// # Parameters
 ///
-/// * `s` - The memory limit string to parse (e.g., "1024", "1K", "512M", "2G")
+/// * `s` - The memory limit string to parse (e.g., "1024", "1K", "1MiB", "2G")
 ///
 /// # Returns
 ///
@@ -197,7 +197,7 @@ pub fn process_file(input_path: &str, config: &CliConfig) -> Result<()> {
 ///
 /// - The input string is empty
 /// - The numeric part cannot be parsed as a valid [`u64`]
-/// - The suffix is not one of K, M, G, or a digit
+/// - The suffix is not one of K, KiB, M, MiB, G, GiB, or a digit
 /// - The result would overflow [`u64`] after applying the multiplier
 pub fn parse_memory_limit(s: &str) -> Result<u64> {
     const KB: u64 = 1024;
@@ -211,20 +211,30 @@ pub fn parse_memory_limit(s: &str) -> Result<u64> {
         )));
     }
 
-    let (number_part, multiplier) = if let Some(last_char) = s.chars().last() {
-        match last_char.to_ascii_uppercase() {
-            'K' => (&s[..s.len() - 1], KB),
-            'M' => (&s[..s.len() - 1], MB),
-            'G' => (&s[..s.len() - 1], GB),
-            _ if last_char.is_ascii_digit() => (s, 1),
-            _ => {
-                return Err(DiagnosticCause::from(Error::InvalidMemoryLimit(format!(
-                    "Invalid memory limit suffix: {last_char}"
-                ))))
-            }
-        }
+    let normalized = s.to_ascii_uppercase();
+    let (number_part, multiplier) = if let Some(number_part) = normalized.strip_suffix("KIB") {
+        (number_part, KB)
+    } else if let Some(number_part) = normalized.strip_suffix("MIB") {
+        (number_part, MB)
+    } else if let Some(number_part) = normalized.strip_suffix("GIB") {
+        (number_part, GB)
+    } else if let Some(number_part) = normalized.strip_suffix('K') {
+        (number_part, KB)
+    } else if let Some(number_part) = normalized.strip_suffix('M') {
+        (number_part, MB)
+    } else if let Some(number_part) = normalized.strip_suffix('G') {
+        (number_part, GB)
+    } else if normalized
+        .chars()
+        .last()
+        .is_some_and(|ch| ch.is_ascii_digit())
+    {
+        (normalized.as_str(), 1)
     } else {
-        (s, 1)
+        let invalid_suffix = normalized.chars().last().unwrap_or('?');
+        return Err(DiagnosticCause::from(Error::InvalidMemoryLimit(format!(
+            "Invalid memory limit suffix: {invalid_suffix}"
+        ))));
     };
 
     let number: u64 = number_part.parse().map_err(|_| {
