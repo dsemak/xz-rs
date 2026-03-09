@@ -120,6 +120,24 @@ pub(crate) fn lzma_alone_encoder(
     result_from_lzma_ret(ret, ())
 }
 
+/// Initialise a raw encoder via `lzma_raw_encoder`.
+pub(crate) fn lzma_raw_encoder(
+    filters: &encoder::options::RawFilters,
+    stream: &mut Stream,
+) -> Result<()> {
+    let ret = unsafe { liblzma_sys::lzma_raw_encoder(stream.lzma_stream(), filters.as_ptr()) };
+    result_from_lzma_ret(ret, ())
+}
+
+/// Initialise a raw decoder via `lzma_raw_decoder`.
+pub(crate) fn lzma_raw_decoder(
+    filters: &encoder::options::RawFilters,
+    stream: &mut Stream,
+) -> Result<()> {
+    let ret = unsafe { liblzma_sys::lzma_raw_decoder(stream.lzma_stream(), filters.as_ptr()) };
+    result_from_lzma_ret(ret, ())
+}
+
 /// Initialise an index decoder with `lzma_index_decoder`.
 ///
 /// The index will be made available through the `index_ptr` after decoding completes.

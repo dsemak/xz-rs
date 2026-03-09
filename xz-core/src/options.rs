@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use lzma_safe::decoder::options::{Flags as DecoderFlags, Options as DecoderMtOptions};
 use lzma_safe::encoder::options::Options as EncoderMtOptions;
-use lzma_safe::{AloneEncoder, Decoder, Encoder, Stream};
+use lzma_safe::{AloneEncoder, Decoder, Encoder, RawDecoder, RawEncoder, Stream};
 
 pub use lzma_safe::decoder::options::Flags;
 pub use lzma_safe::encoder::options::{
@@ -61,6 +61,7 @@ impl Default for CompressionOptions {
 pub(crate) enum BuiltEncoder {
     Xz(Encoder),
     Lzma(AloneEncoder),
+    Raw(RawEncoder),
 }
 
 impl BuiltEncoder {
@@ -73,6 +74,7 @@ impl BuiltEncoder {
         match self {
             BuiltEncoder::Xz(enc) => enc.process(input, output, action),
             BuiltEncoder::Lzma(enc) => enc.process(input, output, action),
+            BuiltEncoder::Raw(enc) => enc.process(input, output, action),
         }
     }
 
@@ -80,6 +82,34 @@ impl BuiltEncoder {
         match self {
             BuiltEncoder::Xz(enc) => enc.is_finished(),
             BuiltEncoder::Lzma(enc) => enc.is_finished(),
+            BuiltEncoder::Raw(enc) => enc.is_finished(),
+        }
+    }
+}
+
+/// Decoder built from [`DecompressionOptions`].
+pub(crate) enum BuiltDecoder {
+    Standard(Decoder),
+    Raw(RawDecoder),
+}
+
+impl BuiltDecoder {
+    pub(crate) fn process(
+        &mut self,
+        input: &[u8],
+        output: &mut [u8],
+        action: lzma_safe::Action,
+    ) -> std::result::Result<(usize, usize), lzma_safe::Error> {
+        match self {
+            BuiltDecoder::Standard(dec) => dec.process(input, output, action),
+            BuiltDecoder::Raw(dec) => dec.process(input, output, action),
+        }
+    }
+
+    pub(crate) fn is_finished(&self) -> bool {
+        match self {
+            BuiltDecoder::Standard(dec) => dec.is_finished(),
+            BuiltDecoder::Raw(dec) => dec.is_finished(),
         }
     }
 }
@@ -207,6 +237,7 @@ impl CompressionOptions {
         match self.format {
             EncodeFormat::Xz => self.build_xz_encoder().map(BuiltEncoder::Xz),
             EncodeFormat::Lzma => self.build_lzma_encoder().map(BuiltEncoder::Lzma),
+            EncodeFormat::Raw => self.build_raw_encoder().map(BuiltEncoder::Raw),
         }
     }
 
@@ -283,6 +314,41 @@ impl CompressionOptions {
         AloneEncoder::new(options, Stream::default()).map_err(Error::from)
     }
 
+    fn build_raw_encoder(&self) -> Result<RawEncoder> {
+        if self.check != IntegrityCheck::None {
+            return Err(Error::InvalidOption(
+                "integrity checks are not supported in raw format".into(),
+            ));
+        }
+        if let Threading::Exact(requested) = self.threads {
+            if requested > 1 {
+                return Err(Error::InvalidOption(
+                    "multi-threaded compression is not supported in raw format".into(),
+                ));
+            }
+        }
+        if self.block_size.is_some() {
+            return Err(Error::InvalidOption(
+                "block size is not supported in raw format".into(),
+            ));
+        }
+        if self.timeout.is_some() {
+            return Err(Error::InvalidOption(
+                "timeout is not supported in raw format".into(),
+            ));
+        }
+        if !self.filters.is_empty() {
+            return Err(Error::InvalidOption(
+                "custom filter chains are not supported in raw format".into(),
+            ));
+        }
+
+        let options = self.lzma1.clone().ok_or_else(|| {
+            Error::InvalidOption("raw format requires explicit LZMA1 filter options".into())
+        })?;
+        RawEncoder::new_lzma1(options, Stream::default()).map_err(Error::from)
+    }
+
     pub(crate) fn input_capacity(&self) -> usize {
         self.input_buffer_size.get()
     }
@@ -300,6 +366,7 @@ pub struct DecompressionOptions {
     memlimit_stop: Option<NonZeroU64>,
     flags: DecoderFlags,
     mode: DecodeMode,
+    raw_lzma1: Option<lzma1::Lzma1Options>,
     timeout: Option<Duration>,
     input_buffer_size: NonZeroUsize,
     output_buffer_size: NonZeroUsize,
@@ -313,6 +380,7 @@ impl Default for DecompressionOptions {
             memlimit_stop: None,
             flags: DecoderFlags::empty(),
             mode: DecodeMode::Auto,
+            raw_lzma1: None,
             timeout: None,
             input_buffer_size: NonZeroUsize::new(DEFAULT_INPUT_BUFFER).unwrap(),
             output_buffer_size: NonZeroUsize::new(DEFAULT_OUTPUT_BUFFER).unwrap(),
@@ -387,6 +455,13 @@ impl DecompressionOptions {
         self
     }
 
+    /// Sets explicit LZMA1 filter parameters for raw decoding.
+    #[must_use]
+    pub fn with_raw_lzma1_options(mut self, options: Option<lzma1::Lzma1Options>) -> Self {
+        self.raw_lzma1 = options;
+        self
+    }
+
     /// Sets a timeout for multi-threaded decompression operations.
     ///
     /// This timeout applies to internal thread coordination in the multi-threaded
@@ -418,7 +493,7 @@ impl DecompressionOptions {
         self
     }
 
-    pub(crate) fn build_decoder(&self) -> Result<Decoder> {
+    pub(crate) fn build_decoder(&self) -> Result<BuiltDecoder> {
         let memlimit = self.memlimit.get();
         let memlimit_stop = self
             .memlimit_stop
@@ -443,7 +518,9 @@ impl DecompressionOptions {
                     }
                 }
 
-                Decoder::new_auto(memlimit, self.flags, stream).map_err(Error::from)
+                Decoder::new_auto(memlimit, self.flags, stream)
+                    .map(BuiltDecoder::Standard)
+                    .map_err(Error::from)
             }
             DecodeMode::Xz => {
                 let threads = match sanitize_threads(self.threads) {
@@ -460,7 +537,9 @@ impl DecompressionOptions {
                     timeout: self.timeout.map_or(0, duration_to_timeout),
                 };
 
-                Decoder::new_mt(options, stream).map_err(Error::from)
+                Decoder::new_mt(options, stream)
+                    .map(BuiltDecoder::Standard)
+                    .map_err(Error::from)
             }
             DecodeMode::Lzma => {
                 if let Threading::Exact(requested) = self.threads {
@@ -472,7 +551,28 @@ impl DecompressionOptions {
                     }
                 }
 
-                Decoder::new_alone(memlimit, stream).map_err(Error::from)
+                Decoder::new_alone(memlimit, stream)
+                    .map(BuiltDecoder::Standard)
+                    .map_err(Error::from)
+            }
+            DecodeMode::Raw => {
+                if let Threading::Exact(requested) = self.threads {
+                    if requested > 1 {
+                        return Err(Error::ThreadingUnsupported {
+                            requested,
+                            mode: DecodeMode::Raw,
+                        });
+                    }
+                }
+
+                let lzma1 = self.raw_lzma1.clone().ok_or_else(|| {
+                    Error::InvalidOption(
+                        "raw decode mode requires explicit LZMA1 filter options".into(),
+                    )
+                })?;
+                RawDecoder::new_lzma1(memlimit, self.flags, lzma1, stream)
+                    .map(BuiltDecoder::Raw)
+                    .map_err(Error::from)
             }
         }
     }

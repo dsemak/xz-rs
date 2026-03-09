@@ -134,7 +134,7 @@ pub struct XzOpts {
     #[arg(short = 'C', long = "check", value_name = "TYPE")]
     pub check: Option<String>,
 
-    /// LZMA1 encoder options (only used with `--format=lzma`)
+    /// LZMA1 filter options used with `--format=lzma` and `--format=raw`
     #[arg(long = "lzma1", value_name = "OPTS", num_args = 0..=1, default_missing_value = "")]
     pub lzma1: Option<String>,
 
@@ -214,7 +214,8 @@ impl XzOpts {
         match self.format.as_deref() {
             Some("xz") => Ok(DecodeMode::Xz),
             Some("lzma") => Ok(DecodeMode::Lzma),
-            Some("raw" | "auto") | None => Ok(DecodeMode::Auto), // Raw format is handled differently
+            Some("raw") => Ok(DecodeMode::Raw),
+            Some("auto") | None => Ok(DecodeMode::Auto),
             Some(invalid) => Err(format!("{invalid}: Unknown file format type").into()),
         }
     }
@@ -228,6 +229,10 @@ impl XzOpts {
             (DecodeMode::Lzma, Some("none") | None) => Ok(IntegrityCheck::None),
             (DecodeMode::Lzma, Some(other)) => {
                 Err(format!("{other}: Integrity checks are not supported in .lzma format").into())
+            }
+            (DecodeMode::Raw, Some("none") | None) => Ok(IntegrityCheck::None),
+            (DecodeMode::Raw, Some(other)) => {
+                Err(format!("{other}: Integrity checks are not supported in raw format").into())
             }
             (_, Some("none")) => Ok(IntegrityCheck::None),
             (_, Some("crc32")) => Ok(IntegrityCheck::Crc32),

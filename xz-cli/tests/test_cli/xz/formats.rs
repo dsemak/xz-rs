@@ -1,5 +1,7 @@
+use std::fs;
+
 use crate::add_test;
-use crate::common::{Fixture, SAMPLE_TEXT};
+use crate::common::{BinaryType, Fixture, SAMPLE_TEXT};
 
 // Test .xz format compatibility
 add_test!(xz_format, async {
@@ -194,18 +196,22 @@ add_test!(lzma_format_via_xz, async {
     fixture.assert_files(&[FILE_NAME], &[data]);
 });
 
-// Test raw mode with `--lzma1` is rejected in file mode.
-add_test!(raw_format_with_suffix_rejected, async {
+// Test raw mode accepts an explicit suffix in file mode for compression and decompression.
+add_test!(raw_format_with_suffix_roundtrip, async {
     const FILE_NAME: &str = "raw_suffix.txt";
+    const RAW_FILE: &str = "raw_suffix.txt.foo";
 
     let data = SAMPLE_TEXT.as_bytes();
     let mut fixture = Fixture::with_file(FILE_NAME, data);
 
     let file_path = fixture.path(FILE_NAME);
+    let raw_path = fixture.path(RAW_FILE);
+
     let output = fixture
         .run_cargo(
             "xz",
             &[
+                "-z",
                 "-k",
                 "--format=raw",
                 "--lzma1=preset=0",
@@ -214,7 +220,200 @@ add_test!(raw_format_with_suffix_rejected, async {
             ],
         )
         .await;
+    assert!(output.status.success());
+    assert!(fixture.file_exists(RAW_FILE));
+
+    fixture.remove_file(FILE_NAME);
+
+    let output = fixture
+        .run_cargo(
+            "xz",
+            &[
+                "-d",
+                "--format=raw",
+                "--lzma1=preset=0",
+                "--suffix=.foo",
+                &raw_path,
+            ],
+        )
+        .await;
+    assert!(output.status.success());
+
+    fixture.assert_files(&[FILE_NAME], &[data]);
+    assert!(!fixture.file_exists(RAW_FILE));
+});
+
+// Test raw mode still rejects file mode when no suffix is available for renaming.
+add_test!(raw_format_without_suffix_rejected_in_file_mode, async {
+    const FILE_NAME: &str = "raw_no_suffix.txt";
+    const RAW_FILE: &str = "raw_no_suffix.txt.foo";
+
+    let data = SAMPLE_TEXT.as_bytes();
+    let mut fixture = Fixture::with_file(FILE_NAME, data);
+
+    let file_path = fixture.path(FILE_NAME);
+    let raw_path = fixture.path(RAW_FILE);
+
+    let output = fixture
+        .run_cargo(
+            "xz",
+            &["-z", "-k", "--format=raw", "--lzma1=preset=0", &file_path],
+        )
+        .await;
     assert!(!output.status.success());
+    assert!(!fixture.file_exists(RAW_FILE));
+
+    let output = fixture
+        .run_cargo(
+            "xz",
+            &[
+                "-z",
+                "-k",
+                "--format=raw",
+                "--lzma1=preset=0",
+                "--suffix=.foo",
+                &file_path,
+            ],
+        )
+        .await;
+    assert!(output.status.success());
+    assert!(fixture.file_exists(RAW_FILE));
+
+    fixture.remove_file(FILE_NAME);
+
+    let output = fixture
+        .run_cargo("xz", &["-d", "--format=raw", "--lzma1=preset=0", &raw_path])
+        .await;
+    assert!(!output.status.success());
+    assert!(fixture.file_exists(RAW_FILE));
+    assert!(!fixture.file_exists(FILE_NAME));
+});
+
+// Test raw mode detects implicit stdout when reading from stdin.
+add_test!(raw_format_stdin_writes_to_stdout, async {
+    let mut fixture = Fixture::with_file("stdin-anchor.txt", b"anchor");
+
+    let output = fixture
+        .run_with_stdin_raw(
+            BinaryType::cargo("xz"),
+            &["--format=raw", "--lzma1=preset=0"],
+            b"foo",
+        )
+        .await;
+    assert!(output.status.success());
+    assert!(!output.stdout_raw.is_empty());
+});
+
+// Test raw mode rejects --files without a suffix because it cannot derive output names.
+add_test!(raw_format_files_requires_suffix, async {
+    const FILE_NAME: &str = "raw_files_input.txt";
+    const LIST_FILE: &str = "raw_files_list.txt";
+
+    let data = SAMPLE_TEXT.as_bytes();
+    let mut fixture = Fixture::with_file(FILE_NAME, data);
+
+    let file_path = fixture.path(FILE_NAME);
+    let list_path = fixture.path(LIST_FILE);
+    fs::write(&list_path, format!("{file_path}\n")).unwrap();
+
+    let output = fixture
+        .run_cargo(
+            "xz",
+            &["--format=raw", "--lzma1=preset=0", "--files", &list_path],
+        )
+        .await;
+    assert!(!output.status.success());
+    assert!(!fixture.file_exists("raw_files_input.txt.foo"));
+});
+
+// Test raw mode accepts --files when an explicit suffix is provided.
+add_test!(raw_format_files_accepts_suffix, async {
+    const FILE_NAME: &str = "raw_files_suffix_input.txt";
+    const LIST_FILE: &str = "raw_files_suffix_list.txt";
+    const RAW_FILE: &str = "raw_files_suffix_input.txt.foo";
+
+    let data = SAMPLE_TEXT.as_bytes();
+    let mut fixture = Fixture::with_file(FILE_NAME, data);
+
+    let file_path = fixture.path(FILE_NAME);
+    let list_path = fixture.path(LIST_FILE);
+    fs::write(&list_path, format!("{file_path}\n")).unwrap();
+
+    let output = fixture
+        .run_cargo(
+            "xz",
+            &[
+                "-z",
+                "-k",
+                "--format=raw",
+                "--lzma1=preset=0",
+                "--suffix=.foo",
+                "--files",
+                &list_path,
+            ],
+        )
+        .await;
+    assert!(output.status.success());
+    assert!(fixture.file_exists(RAW_FILE));
+});
+
+// Test raw mode rejects --files0 without a suffix because it cannot derive output names.
+add_test!(raw_format_files0_requires_suffix, async {
+    const FILE_NAME: &str = "raw_files0_input.txt";
+    const LIST_FILE: &str = "raw_files0_list.bin";
+
+    let data = SAMPLE_TEXT.as_bytes();
+    let mut fixture = Fixture::with_file(FILE_NAME, data);
+
+    let file_path = fixture.path(FILE_NAME);
+    let list_path = fixture.path(LIST_FILE);
+    let mut list_bytes = Vec::new();
+    list_bytes.extend_from_slice(file_path.as_bytes());
+    list_bytes.push(0);
+    fs::write(&list_path, list_bytes).unwrap();
+
+    let output = fixture
+        .run_cargo(
+            "xz",
+            &["--format=raw", "--lzma1=preset=0", "--files0", &list_path],
+        )
+        .await;
+    assert!(!output.status.success());
+    assert!(!fixture.file_exists("raw_files0_input.txt.foo"));
+});
+
+// Test raw mode accepts --files0 when an explicit suffix is provided.
+add_test!(raw_format_files0_accepts_suffix, async {
+    const FILE_NAME: &str = "raw_files0_suffix_input.txt";
+    const LIST_FILE: &str = "raw_files0_suffix_list.bin";
+    const RAW_FILE: &str = "raw_files0_suffix_input.txt.foo";
+
+    let data = SAMPLE_TEXT.as_bytes();
+    let mut fixture = Fixture::with_file(FILE_NAME, data);
+
+    let file_path = fixture.path(FILE_NAME);
+    let list_path = fixture.path(LIST_FILE);
+    let mut list_bytes = Vec::new();
+    list_bytes.extend_from_slice(file_path.as_bytes());
+    list_bytes.push(0);
+    fs::write(&list_path, list_bytes).unwrap();
+
+    let output = fixture
+        .run_cargo(
+            "xz",
+            &[
+                "-z",
+                "-k",
+                "--format=raw",
+                "--lzma1=preset=0",
+                "--suffix=.foo",
+                "--files0",
+                &list_path,
+            ],
+        )
+        .await;
+    assert!(output.status.success());
+    assert!(fixture.file_exists(RAW_FILE));
 });
 
 // Test file already with .xz extension

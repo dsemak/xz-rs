@@ -4,11 +4,13 @@ use crate::{Action, Result, Stream};
 
 mod alone;
 pub mod options;
+mod raw;
 #[cfg(test)]
 mod tests;
 
 pub use alone::AloneEncoder;
 pub use options::Options;
+pub use raw::RawEncoder;
 
 /// Safe wrapper around an `lzma_stream` configured for compression.
 pub struct Encoder {
