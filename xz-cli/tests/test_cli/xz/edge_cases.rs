@@ -209,6 +209,20 @@ add_test!(non_existent_file, async {
     assert!(!output.status.success());
 });
 
+// Test `xz -d` skips files with unknown suffix like upstream xz.
+add_test!(decompress_unknown_suffix_is_skipped, async {
+    const FILE_NAME: &str = "unknown_suffix_input.bin";
+
+    let mut fixture = Fixture::with_file(FILE_NAME, b"not compressed");
+    let file_path = fixture.path(FILE_NAME);
+
+    let output = fixture.run_cargo("xz", &["-d", &file_path]).await;
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output
+        .stderr
+        .contains("Filename has an unknown suffix, skipping"));
+});
+
 // Test `-` as stdin in the middle of the file list.
 add_test!(dash_reads_stdin_in_middle, async {
     const FILE_1: &str = "file1.txt";

@@ -222,6 +222,16 @@ add_test!(bad_xz_vectors_are_rejected, async {
     }
 });
 
+// Test `xz -l` rejects the index uncompressed-size overflow vector.
+add_test!(bad_xz_index_uncomp_overflow_rejected_in_list_mode, async {
+    let vector = Vector::bundled("bad-3-index-uncomp-overflow.xz");
+    let mut fixture = Fixture::with_vector(&vector);
+    let vector_path = fixture.path(vector.name());
+    let output = fixture.run_cargo("xz", &["-l", &vector_path]).await;
+    assert!(!output.status.success());
+    assert!(!output.stderr.is_empty());
+});
+
 // Test unsupported `.xz` vectors that must fail cleanly.
 add_test!(unsupported_xz_vectors_fail_cleanly, async {
     let rejected_vectors = [
@@ -267,6 +277,42 @@ add_test!(unsupported_xz_integrity_check_warns, async {
         "expected unsupported integrity check warning: {}",
         output.stderr,
     );
+});
+
+// Test `-qQ` suppresses unsupported-check warning while decoding successfully.
+add_test!(
+    unsupported_xz_integrity_check_q_q_succeeds_without_warning,
+    async {
+        let vector = Vector::bundled("unsupported-check.xz");
+        let mut fixture = Fixture::with_vector(&vector);
+        let vector_path = fixture.path(vector.name());
+        let output = fixture
+            .run_cargo("xz", &["-d", "-c", "-qQ", &vector_path])
+            .await;
+        assert!(output.status.success());
+        assert_eq!(output.stdout_raw.as_slice(), HELLO_WORLD);
+        assert!(output.stderr.is_empty());
+    }
+);
+
+// Test bad `.lzma` vectors are rejected by `xz -dc`.
+add_test!(bad_lzma_vectors_are_rejected_by_xz, async {
+    let bad_vectors = [
+        Vector::bundled("bad-unknown_size-without_eopm.lzma"),
+        Vector::bundled("bad-too_big_size-with_eopm.lzma"),
+        Vector::bundled("bad-too_small_size-without_eopm-1.lzma"),
+        Vector::bundled("bad-too_small_size-without_eopm-2.lzma"),
+        Vector::bundled("bad-too_small_size-without_eopm-3.lzma"),
+    ];
+
+    let mut fixture = Fixture::with_vectors(&bad_vectors);
+
+    for vector in &bad_vectors {
+        let vector_path = fixture.path(vector.name());
+        let output = fixture.run_cargo("xz", &["-d", "-c", &vector_path]).await;
+        assert!(!output.status.success());
+        assert!(!output.stderr.is_empty());
+    }
 });
 
 // Test core `.lz` vectors that `xz` auto-detects and decodes successfully.
