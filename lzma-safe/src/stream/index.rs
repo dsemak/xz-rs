@@ -194,7 +194,27 @@ pub enum IndexEntry {
 pub struct IndexIterator<'a> {
     inner: liblzma_sys::lzma_index_iter,
     mode: IndexIterMode,
+    any_state: AnyIterState,
     _owner: PhantomData<&'a Index>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct AnyIterState {
+    previous: Option<AnyEntryPosition>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct AnyEntryPosition {
+    kind: AnyEntryKind,
+    stream_number: u64,
+    stream_block_count: u64,
+    block_number_in_stream: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AnyEntryKind {
+    Stream,
+    Block,
 }
 
 impl<'a> IndexIterator<'a> {
@@ -211,6 +231,7 @@ impl<'a> IndexIterator<'a> {
         Self {
             inner,
             mode,
+            any_state: AnyIterState { previous: None },
             _owner: PhantomData,
         }
     }
@@ -218,6 +239,7 @@ impl<'a> IndexIterator<'a> {
     /// Set the iteration mode for this iterator.
     pub fn set_mode(&mut self, mode: IndexIterMode) {
         self.mode = mode;
+        self.any_state = AnyIterState { previous: None };
     }
 
     /// Information about the current stream entry.
@@ -251,15 +273,63 @@ impl<'a> IndexIterator<'a> {
     }
 
     /// Get the current entry based on the iteration mode.
-    fn current_entry(&self) -> IndexEntry {
+    fn current_entry(&mut self) -> IndexEntry {
         match self.mode {
             IndexIterMode::Stream => IndexEntry::Stream(self.stream()),
             IndexIterMode::Block | IndexIterMode::NonEmptyBlock => IndexEntry::Block(self.block()),
-            IndexIterMode::Any => {
-                // For Any mode, we need to determine what we're currently pointing at
-                // This is a simplification - we'll return Block by default
-                IndexEntry::Block(self.block())
+            IndexIterMode::Any => self.current_any_entry(),
+        }
+    }
+
+    fn current_any_entry(&mut self) -> IndexEntry {
+        let stream_number = self.inner.stream.number;
+        let stream_block_count = self.inner.stream.block_count;
+        let block_number_in_stream = self.inner.block.number_in_stream;
+
+        let kind = match self.any_state.previous {
+            None => {
+                if stream_block_count == 0 {
+                    AnyEntryKind::Stream
+                } else {
+                    AnyEntryKind::Block
+                }
             }
+            Some(previous) => match previous.kind {
+                AnyEntryKind::Stream => {
+                    let stream_has_unread_blocks = previous.stream_block_count > 0;
+                    let points_to_first_block_in_same_stream =
+                        stream_number == previous.stream_number && block_number_in_stream == 1;
+                    if stream_has_unread_blocks && points_to_first_block_in_same_stream {
+                        AnyEntryKind::Block
+                    } else {
+                        AnyEntryKind::Stream
+                    }
+                }
+                AnyEntryKind::Block => {
+                    let stream_has_unread_blocks =
+                        previous.block_number_in_stream < previous.stream_block_count;
+                    let points_to_next_block_in_same_stream = stream_number
+                        == previous.stream_number
+                        && block_number_in_stream == previous.block_number_in_stream + 1;
+                    if stream_has_unread_blocks && points_to_next_block_in_same_stream {
+                        AnyEntryKind::Block
+                    } else {
+                        AnyEntryKind::Stream
+                    }
+                }
+            },
+        };
+
+        self.any_state.previous = Some(AnyEntryPosition {
+            kind,
+            stream_number,
+            stream_block_count,
+            block_number_in_stream,
+        });
+
+        match kind {
+            AnyEntryKind::Stream => IndexEntry::Stream(self.stream()),
+            AnyEntryKind::Block => IndexEntry::Block(self.block()),
         }
     }
 
@@ -442,42 +512,13 @@ pub struct BlockInfo {
 
 #[cfg(test)]
 mod tests {
+    use crate::encoder::options::{Compression, IntegrityCheck};
     use crate::{Action, Stream};
 
     use super::*;
 
-    /// Helper function to create a `FileInfoDecoder` with extracted index.
-    ///
-    /// This compresses the provided `data`, then decodes the resulting file info and index.
-    ///
-    /// # Parameters
-    ///
-    /// * `data` - The input data to compress and decode.
-    ///
-    /// # Returns
-    ///
-    /// Returns `Some(FileInfoDecoder)` with a finished and valid decoder if successful,
-    /// or `None` on error.
-    fn create_test_decoder(data: &[u8]) -> Option<crate::FileInfoDecoder> {
-        use crate::encoder::options::{Compression, IntegrityCheck};
-
-        // Compress input data.
-        let mut encoder = Stream::default()
-            .easy_encoder(Compression::Level6, IntegrityCheck::Crc64)
-            .ok()?;
-
-        // Allocate sufficient buffer for compression output.
-        let mut compressed = vec![0u8; data.len().saturating_mul(2) + 2048];
-        let (_, written) = encoder.process(data, &mut compressed, Action::Run).ok()?;
-        let mut total_written = written;
-
-        // Ensure all data is compressed by finishing the stream.
-        let (_, finish_written) = encoder
-            .process(&[], &mut compressed[total_written..], Action::Finish)
-            .ok()?;
-        total_written += finish_written;
-        compressed.truncate(total_written);
-
+    /// Helper function to create a `FileInfoDecoder` from already compressed `.xz` data.
+    fn create_test_decoder_from_compressed(compressed: &[u8]) -> Option<crate::FileInfoDecoder> {
         // Create a decoder to extract the index and file info.
         let mut decoder = Stream::default()
             .file_info_decoder(u64::MAX, compressed.len() as u64)
@@ -515,6 +556,44 @@ mod tests {
 
         // Decoder should be finished, and index extractable.
         Some(decoder)
+    }
+
+    /// Helper function to create a standalone `.xz` stream from input bytes.
+    fn compress_to_xz_stream(data: &[u8]) -> Option<Vec<u8>> {
+        // Compress input data.
+        let mut encoder = Stream::default()
+            .easy_encoder(Compression::Level6, IntegrityCheck::Crc64)
+            .ok()?;
+
+        // Allocate sufficient buffer for compression output.
+        let mut compressed = vec![0u8; data.len().saturating_mul(2) + 2048];
+        let (_, written) = encoder.process(data, &mut compressed, Action::Run).ok()?;
+        let mut total_written = written;
+
+        // Ensure all data is compressed by finishing the stream.
+        let (_, finish_written) = encoder
+            .process(&[], &mut compressed[total_written..], Action::Finish)
+            .ok()?;
+        total_written += finish_written;
+        compressed.truncate(total_written);
+        Some(compressed)
+    }
+
+    /// Helper function to create a `FileInfoDecoder` with extracted index.
+    ///
+    /// This compresses the provided `data`, then decodes the resulting file info and index.
+    ///
+    /// # Parameters
+    ///
+    /// * `data` - The input data to compress and decode.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Some(FileInfoDecoder)` with a finished and valid decoder if successful,
+    /// or `None` on error.
+    fn create_test_decoder(data: &[u8]) -> Option<crate::FileInfoDecoder> {
+        let compressed = compress_to_xz_stream(data)?;
+        create_test_decoder_from_compressed(&compressed)
     }
 
     /// Test basic Index creation and accessors.
@@ -616,6 +695,29 @@ mod tests {
 
         let entries: Vec<_> = index.iter().collect();
         assert!(!entries.is_empty(), "Should have at least one entry");
+    }
+
+    /// Test `IndexIterator` with Any mode on concatenated streams.
+    #[test]
+    fn index_iterator_any_trait_with_concatenated_streams() {
+        let first = compress_to_xz_stream(&b"first stream payload".repeat(32)).unwrap();
+        let second = compress_to_xz_stream(&b"second stream payload".repeat(32)).unwrap();
+
+        let mut concatenated = Vec::with_capacity(first.len() + second.len());
+        concatenated.extend_from_slice(&first);
+        concatenated.extend_from_slice(&second);
+
+        let decoder = create_test_decoder_from_compressed(&concatenated).unwrap();
+        let index = decoder.index().unwrap();
+        assert_eq!(index.stream_count(), 2);
+
+        let entries: Vec<_> = index.iter().collect();
+        assert!(entries
+            .iter()
+            .any(|entry| matches!(entry, IndexEntry::Stream(_))));
+        assert!(entries
+            .iter()
+            .any(|entry| matches!(entry, IndexEntry::Block(_))));
     }
 
     /// Test that iterator returns None when no more entries (Iterator trait).
