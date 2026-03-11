@@ -34,6 +34,12 @@ pub enum DecodeMode {
     /// **Formats**: LZMA (.lzma) only
     /// **Use case**: Legacy LZMA stream compatibility
     Lzma,
+
+    /// Process raw LZMA1 filter streams with explicitly supplied filter options.
+    ///
+    /// This mode has no container metadata, so the caller must configure the filter chain
+    /// out-of-band and threading is not supported.
+    Raw,
 }
 
 /// Encoder container format selection.
@@ -43,6 +49,8 @@ pub enum EncodeFormat {
     Xz,
     /// Legacy `.lzma` (`LZMA_Alone`) container format.
     Lzma,
+    /// Raw LZMA1 filter stream without any container wrapper.
+    Raw,
 }
 
 /// Statistical summary of completed stream processing operations.

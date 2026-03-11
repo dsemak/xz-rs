@@ -1,12 +1,12 @@
 //! Asynchronous XZ compression and decompression pipeline.
 
-use lzma_safe::{Action, Decoder};
+use lzma_safe::Action;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 use crate::buffer::Buffer;
 use crate::config::StreamSummary;
 use crate::error::{BackendError, Result};
-use crate::options::{BuiltEncoder, CompressionOptions, DecompressionOptions};
+use crate::options::{BuiltDecoder, BuiltEncoder, CompressionOptions, DecompressionOptions};
 
 /// Compresses data asynchronously from a reader into a writer using the provided options.
 ///
@@ -287,7 +287,7 @@ async fn finish_encoder_async<W: AsyncWrite + Unpin>(
 /// This function uses a bounded number of iterations to avoid infinite loops if the backend
 /// fails to make progress.
 async fn finish_decoder_async<W: AsyncWrite + Unpin>(
-    decoder: &mut Decoder,
+    decoder: &mut BuiltDecoder,
     writer: &mut W,
     output: &mut [u8],
     total_out: &mut u64,

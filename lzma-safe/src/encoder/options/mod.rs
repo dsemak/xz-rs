@@ -6,7 +6,9 @@ mod lzma1;
 mod present;
 
 pub use check::IntegrityCheck;
-pub use filter::{FilterConfig, FilterOptions, FilterType, OwnedFilterOptions, RawFilters};
+pub use filter::{
+    prepare_lzma1_filters, FilterConfig, FilterOptions, FilterType, OwnedFilterOptions, RawFilters,
+};
 pub use lzma1::{Lzma1Options, MatchFinder, Mode};
 pub use present::Compression;
 
@@ -176,7 +178,7 @@ mod tests {
         assert_eq!(raw.filters.len(), 3); // two filters + terminator
         assert_eq!(raw.filters[0].id, FilterType::Lzma2 as u64);
         assert_eq!(raw.filters[1].id, FilterType::Delta as u64);
-        assert_eq!(raw.filters[2].id, 0);
+        assert_eq!(raw.filters[2].id, u64::MAX);
         assert!(!raw.filters[0].options.is_null());
         assert!(!raw.filters[1].options.is_null());
     }

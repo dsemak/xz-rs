@@ -90,6 +90,20 @@ pub fn cleanup_input_file(input_path: &str, config: &CliConfig) -> Result<()> {
 pub fn process_file(input_path: &str, config: &CliConfig) -> Result<()> {
     let is_stdin = input_path.is_empty() || input_path == "-";
 
+    if matches!(config.format, xz_core::config::DecodeMode::Raw)
+        && matches!(
+            config.mode,
+            OperationMode::Compress | OperationMode::Decompress
+        )
+        && !is_stdin
+        && !config.stdout
+        && config.suffix.is_none()
+    {
+        return Err(DiagnosticCause::from(Error::InvalidOption {
+            message: "--format=raw requires --suffix in file mode".into(),
+        }));
+    }
+
     // Use empty PathBuf for stdin, otherwise use the provided path
     let input_path_buf = if is_stdin {
         PathBuf::new()

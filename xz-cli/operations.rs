@@ -23,6 +23,9 @@ fn resolve_encode_format(config: &CliConfig) -> EncodeFormat {
     if config.format == xz_core::config::DecodeMode::Lzma {
         return EncodeFormat::Lzma;
     }
+    if config.format == xz_core::config::DecodeMode::Raw {
+        return EncodeFormat::Raw;
+    }
     EncodeFormat::Xz
 }
 
@@ -62,25 +65,8 @@ fn resolve_compression_level(config: &CliConfig) -> Result<Compression> {
     }
 }
 
-/// Apply `--lzma1` overrides to compression options when encoding the `.lzma` container.
-fn apply_lzma1_overrides(
-    mut options: CompressionOptions,
-    config: &CliConfig,
-    encode_format: EncodeFormat,
-    compression_level: Compression,
-) -> Result<CompressionOptions> {
-    let Some(raw_lzma1) = config.lzma1.as_deref() else {
-        return Ok(options);
-    };
-
-    if encode_format != EncodeFormat::Lzma {
-        return Err(DiagnosticCause::from(Error::InvalidOption {
-            message: "--lzma1 is only supported with --format=lzma".into(),
-        }));
-    }
-
+fn build_lzma1_options(raw_lzma1: &str, compression_level: Compression) -> Result<Lzma1Options> {
     let parsed = parse_lzma1_options(raw_lzma1).map_err(DiagnosticCause::from)?;
-
     let base_preset = parsed.preset.unwrap_or(compression_level);
     let mut lzma1 = Lzma1Options::from_preset(base_preset).map_err(|e| {
         DiagnosticCause::from(Error::InvalidOption {
@@ -113,6 +99,27 @@ fn apply_lzma1_overrides(
         lzma1 = lzma1.with_depth(depth);
     }
 
+    Ok(lzma1)
+}
+
+/// Apply `--lzma1` overrides to compression options when encoding `.lzma` or raw streams.
+fn apply_lzma1_overrides(
+    mut options: CompressionOptions,
+    config: &CliConfig,
+    encode_format: EncodeFormat,
+    compression_level: Compression,
+) -> Result<CompressionOptions> {
+    let Some(raw_lzma1) = config.lzma1.as_deref() else {
+        return Ok(options);
+    };
+
+    if !matches!(encode_format, EncodeFormat::Lzma | EncodeFormat::Raw) {
+        return Err(DiagnosticCause::from(Error::InvalidOption {
+            message: "--lzma1 is only supported with --format=lzma or --format=raw".into(),
+        }));
+    }
+
+    let lzma1 = build_lzma1_options(raw_lzma1, compression_level)?;
     options = options.with_lzma1_options(Some(lzma1));
     Ok(options)
 }
@@ -127,9 +134,9 @@ fn apply_threads_for_compression(
         return Ok(options);
     };
 
-    if encode_format == EncodeFormat::Lzma {
+    if matches!(encode_format, EncodeFormat::Lzma | EncodeFormat::Raw) {
         // `.lzma` is always single-threaded. Keep CLI compatibility by accepting `--threads`
-        // but ignoring it for this container format.
+        // but ignoring it for these single-threaded formats.
         return Ok(options);
     }
 
@@ -208,6 +215,107 @@ pub fn compress_file(
     Ok(())
 }
 
+/// Emit verbose/robot output for a completed decompression operation.
+fn emit_decompress_summary(config: &CliConfig, bytes_read: u64, bytes_written: u64) {
+    if !(config.verbose || config.robot) {
+        return;
+    }
+
+    let ratio = ratio(bytes_written, bytes_read);
+    if config.robot {
+        println!("{bytes_read} {bytes_written} {ratio:.1}");
+    } else {
+        eprintln!(
+            "Decompressed {bytes_read} bytes to {bytes_written} bytes ({ratio:.1}% expansion)"
+        );
+    }
+}
+
+/// Apply `--memlimit` to decompression options when a nonzero limit is configured.
+fn apply_memlimit(mut options: DecompressionOptions, config: &CliConfig) -> DecompressionOptions {
+    if let Some(memory_limit) = config.memory_limit {
+        if let Some(limit) = std::num::NonZeroU64::new(memory_limit) {
+            options = options.with_memlimit(limit);
+        }
+    }
+    options
+}
+
+/// Apply `--threads` to decompression options (skipped for LZMA streams).
+fn apply_threads_for_decompression(
+    mut options: DecompressionOptions,
+    config: &CliConfig,
+) -> Result<DecompressionOptions> {
+    let Some(threads) = config.threads else {
+        return Ok(options);
+    };
+
+    if config.format == xz_core::config::DecodeMode::Lzma {
+        return Ok(options);
+    }
+
+    let thread_count = u32::try_from(threads)
+        .map_err(|_| DiagnosticCause::from(Error::InvalidThreadCount { count: threads }))?;
+    options = options.with_threads(xz_core::Threading::Exact(thread_count));
+    Ok(options)
+}
+
+/// Build decoder flags from CLI configuration.
+fn build_decoder_flags(config: &CliConfig) -> Flags {
+    let mut flags = if config.single_stream {
+        Flags::empty()
+    } else {
+        Flags::CONCATENATED
+    };
+
+    if config.ignore_check {
+        flags |= Flags::IGNORE_CHECK;
+    }
+
+    flags
+}
+
+/// Decompress a raw LZMA stream (no container framing).
+fn decompress_raw(
+    input: &mut impl io::Read,
+    output: &mut impl io::Write,
+    config: &CliConfig,
+) -> Result<()> {
+    let Some(raw_lzma1) = config.lzma1.as_deref() else {
+        return Err(DiagnosticCause::from(Error::InvalidOption {
+            message: "--format=raw requires --lzma1 filter options".into(),
+        }));
+    };
+
+    let lzma1 = build_lzma1_options(raw_lzma1, Compression::default())?;
+
+    let mut options = DecompressionOptions::default()
+        .with_mode(config.format)
+        .with_raw_lzma1_options(Some(lzma1));
+
+    options = apply_memlimit(options, config);
+
+    let summary = decompress(input, output, &options).map_err(|e| {
+        let message = xz_message_from_core_error(&e);
+        DiagnosticCause::from(Error::Decompression { message })
+    })?;
+
+    emit_decompress_summary(config, summary.bytes_read, summary.bytes_written);
+    Ok(())
+}
+
+/// Emit an unsupported integrity-check warning when applicable.
+fn warn_unsupported_check(unsupported_check_id: Option<u32>, config: &CliConfig) -> Result<()> {
+    if let Some(check_id) = unsupported_check_id {
+        if !config.no_warn {
+            return Err(DiagnosticCause::from(Warning::UnsupportedCheck {
+                check_id,
+            }));
+        }
+    }
+    Ok(())
+}
+
 /// Decompresses XZ or LZMA data from an input reader to an output writer.
 ///
 /// Automatically detects the compression format (XZ or LZMA) and decompresses
@@ -237,6 +345,10 @@ pub fn decompress_file(
     mut output: impl io::Write,
     config: &CliConfig,
 ) -> Result<()> {
+    if config.format == xz_core::config::DecodeMode::Raw {
+        return decompress_raw(&mut input, &mut output, config);
+    }
+
     // Read and preserve a small prefix so we can inspect the XZ Stream Header without
     // losing bytes from the actual decode stream.
     let prefix = read_xz_stream_header_prefix(&mut input).map_err(|source| {
@@ -249,81 +361,20 @@ pub fn decompress_file(
 
     let mut input = io::Cursor::new(prefix).chain(input);
 
-    let mut options = DecompressionOptions::default();
+    let options = DecompressionOptions::default()
+        .with_mode(config.format)
+        .with_flags(build_decoder_flags(config));
+    let options = apply_threads_for_decompression(options, config)?;
+    let options = apply_memlimit(options, config);
 
-    // Set thread count if specified
-    if let Some(threads) = config.threads {
-        if config.format != xz_core::config::DecodeMode::Lzma {
-            let thread_count = u32::try_from(threads)
-                .map_err(|_| DiagnosticCause::from(Error::InvalidThreadCount { count: threads }))?;
-            options = options.with_threads(xz_core::Threading::Exact(thread_count));
-        }
-    }
-
-    // Set memory limit if specified
-    if let Some(memory_limit) = config.memory_limit {
-        // Only set if memory_limit is nonzero
-        if let Some(limit) = std::num::NonZeroU64::new(memory_limit) {
-            options = options.with_memlimit(limit);
-        }
-    }
-
-    // Set decode mode based on format
-    options = options.with_mode(config.format);
-
-    // Configure decoder flags
-    //
-    // Build flags based on configuration:
-    // - CONCATENATED: Process multiple concatenated streams (default)
-    // - IGNORE_CHECK: Skip integrity check verification (when requested)
-    let mut flags = if config.single_stream {
-        Flags::empty()
-    } else {
-        Flags::CONCATENATED
-    };
-
-    if config.ignore_check {
-        flags |= Flags::IGNORE_CHECK;
-    }
-
-    options = options.with_flags(flags);
-
-    // Perform decompression and handle errors
     let summary = decompress(&mut input, &mut output, &options).map_err(|e| {
         let message = xz_message_from_core_error(&e);
         DiagnosticCause::from(Error::Decompression { message })
     })?;
 
-    // Print output if verbose or robot mode is enabled
-    if config.verbose || config.robot {
-        let ratio = ratio(summary.bytes_written, summary.bytes_read);
+    emit_decompress_summary(config, summary.bytes_read, summary.bytes_written);
 
-        if config.robot {
-            // Machine-readable output for robot mode
-            println!(
-                "{} {} {:.1}",
-                summary.bytes_read, summary.bytes_written, ratio
-            );
-        } else {
-            // Human-readable output for verbose mode
-            eprintln!(
-                "Decompressed {} bytes to {} bytes ({:.1}% expansion)",
-                summary.bytes_read, summary.bytes_written, ratio
-            );
-        }
-    }
-
-    if let Some(check_id) = unsupported_check_id {
-        if !config.no_warn {
-            // Decoding can succeed but unsupported integrity
-            // check type must be reported as a warning (exit code 2).
-            return Err(DiagnosticCause::from(Warning::UnsupportedCheck {
-                check_id,
-            }));
-        }
-    }
-
-    Ok(())
+    warn_unsupported_check(unsupported_check_id, config)
 }
 
 /// Lists information about an XZ compressed file.

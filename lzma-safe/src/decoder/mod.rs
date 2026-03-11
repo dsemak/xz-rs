@@ -5,12 +5,14 @@ use crate::{Action, Result, Stream};
 mod file_info;
 mod index;
 pub mod options;
+mod raw;
 #[cfg(test)]
 mod tests;
 
 pub use file_info::FileInfoDecoder;
 pub use index::IndexDecoder;
 pub use options::Options;
+pub use raw::RawDecoder;
 
 /// Safe wrapper around an `lzma_stream` configured for decompression.
 pub struct Decoder {

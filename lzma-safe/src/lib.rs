@@ -40,8 +40,8 @@ pub mod stream;
 mod error;
 mod ffi;
 
-pub use decoder::{Decoder, FileInfoDecoder, IndexDecoder};
-pub use encoder::{AloneEncoder, Encoder};
+pub use decoder::{Decoder, FileInfoDecoder, IndexDecoder, RawDecoder};
+pub use encoder::{AloneEncoder, Encoder, RawEncoder};
 pub use error::{Error, Result};
 pub use stream::{BlockInfo, Index, IndexEntry, IndexIterMode, IndexIterator, Stream, StreamInfo};
 

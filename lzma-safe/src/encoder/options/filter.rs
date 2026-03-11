@@ -237,6 +237,53 @@ impl RawFilters {
     }
 }
 
+/// Prepares a single-filter raw LZMA1 chain using already-validated encoder options.
+pub fn prepare_lzma1_filters(options: &super::Lzma1Options, filter_type: FilterType) -> RawFilters {
+    debug_assert!(matches!(
+        filter_type,
+        FilterType::Lzma1 | FilterType::Lzma1Ext
+    ));
+
+    let raw = options.as_raw();
+    let mode = match raw.mode {
+        liblzma_sys::lzma_mode_LZMA_MODE_FAST => CompressionMode::Fast,
+        _ => CompressionMode::Normal,
+    };
+    let mf = match raw.mf {
+        liblzma_sys::lzma_match_finder_LZMA_MF_HC3 => MatchFinder::Hc3,
+        liblzma_sys::lzma_match_finder_LZMA_MF_BT2 => MatchFinder::Bt2,
+        liblzma_sys::lzma_match_finder_LZMA_MF_BT3 => MatchFinder::Bt3,
+        liblzma_sys::lzma_match_finder_LZMA_MF_BT4 => MatchFinder::Bt4,
+        _ => MatchFinder::Hc4,
+    };
+    let lzma_options = LzmaOptions {
+        dict_size: raw.dict_size,
+        lc: raw.lc,
+        lp: raw.lp,
+        pb: raw.pb,
+        mode,
+        nice_len: raw.nice_len,
+        mf,
+        depth: raw.depth,
+        preset_dict: None,
+        ext_flags: 0,
+        ext_size_low: 0,
+        ext_size_high: 0,
+    };
+    let (filter, owned) = create_lzma_filter(filter_type, Some(&lzma_options));
+
+    RawFilters {
+        filters: vec![
+            filter,
+            liblzma_sys::lzma_filter {
+                id: u64::MAX,
+                options: std::ptr::null_mut(),
+            },
+        ],
+        owned: vec![owned],
+    }
+}
+
 /// Creates LZMA filter options and returns the filter entry with owned options.
 ///
 /// # Parameters
@@ -273,10 +320,10 @@ fn create_lzma_filter(
         reserved_int6: 0,
         reserved_int7: 0,
         reserved_int8: 0,
-        reserved_enum1: 0,
-        reserved_enum2: 0,
-        reserved_enum3: 0,
-        reserved_enum4: 0,
+        reserved_enum1: liblzma_sys::lzma_reserved_enum_LZMA_RESERVED_ENUM,
+        reserved_enum2: liblzma_sys::lzma_reserved_enum_LZMA_RESERVED_ENUM,
+        reserved_enum3: liblzma_sys::lzma_reserved_enum_LZMA_RESERVED_ENUM,
+        reserved_enum4: liblzma_sys::lzma_reserved_enum_LZMA_RESERVED_ENUM,
         reserved_ptr1: std::ptr::null_mut(),
         reserved_ptr2: std::ptr::null_mut(),
     });
@@ -485,9 +532,9 @@ pub(crate) fn prepare_filters(configs: &[FilterConfig]) -> RawFilters {
         owned.push(owned_opts);
     }
 
-    // Terminate the filter chain with LZMA_VLI_UNKNOWN (0) as required by liblzma.
+    // Terminate the filter chain with `LZMA_VLI_UNKNOWN` (`u64::MAX`) as required by liblzma.
     filters.push(liblzma_sys::lzma_filter {
-        id: 0,
+        id: u64::MAX,
         options: std::ptr::null_mut(),
     });
 
