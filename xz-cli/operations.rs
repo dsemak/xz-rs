@@ -8,7 +8,10 @@ use xz_core::{
     config::EncodeFormat,
     detect_unsupported_xz_check_id, file_info,
     options::lzma1::Lzma1Options,
-    options::{Compression, CompressionOptions, DecompressionOptions, Flags},
+    options::{
+        Compression, CompressionOptions, DecompressionOptions, FilterConfig, FilterOptions,
+        FilterType, Flags, LzmaOptions,
+    },
     pipeline::{compress, decompress},
     ratio, read_xz_stream_header_prefix, Error as CoreError,
 };
@@ -124,6 +127,34 @@ fn apply_lzma1_overrides(
     Ok(options)
 }
 
+/// Apply `--lzma2` overrides to `.xz` compression options.
+fn apply_lzma2_overrides(
+    mut options: CompressionOptions,
+    config: &CliConfig,
+    encode_format: EncodeFormat,
+    compression_level: Compression,
+) -> Result<CompressionOptions> {
+    let Some(raw_lzma2) = config.lzma2.as_deref() else {
+        return Ok(options);
+    };
+
+    if encode_format != EncodeFormat::Xz {
+        return Err(DiagnosticCause::from(Error::InvalidOption {
+            message: "--lzma2 is only supported with .xz output".into(),
+        }));
+    }
+
+    let lzma1 = build_lzma1_options(raw_lzma2, compression_level)?;
+    let lzma2 = LzmaOptions::from(&lzma1);
+    let filters = vec![FilterConfig {
+        filter_type: FilterType::Lzma2,
+        options: Some(FilterOptions::Lzma(lzma2)),
+    }];
+
+    options = options.with_filters(filters);
+    Ok(options)
+}
+
 /// Apply `--threads` to compression options when supported by the container format.
 fn apply_threads_for_compression(
     mut options: CompressionOptions,
@@ -202,6 +233,7 @@ pub fn compress_file(
         .with_check(config.check)
         .with_level(compression_level);
     let options = apply_lzma1_overrides(options, config, encode_format, compression_level)?;
+    let options = apply_lzma2_overrides(options, config, encode_format, compression_level)?;
     let options = apply_threads_for_compression(options, config, encode_format)?;
 
     // Perform compression and handle errors

@@ -7,7 +7,8 @@ mod present;
 
 pub use check::IntegrityCheck;
 pub use filter::{
-    prepare_lzma1_filters, FilterConfig, FilterOptions, FilterType, OwnedFilterOptions, RawFilters,
+    prepare_lzma1_filters, FilterConfig, FilterOptions, FilterType, LzmaOptions,
+    OwnedFilterOptions, RawFilters,
 };
 pub use lzma1::{Lzma1Options, MatchFinder, Mode};
 pub use present::Compression;

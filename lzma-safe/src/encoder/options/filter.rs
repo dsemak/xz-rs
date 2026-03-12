@@ -179,6 +179,38 @@ impl Default for LzmaOptions {
     }
 }
 
+impl From<&super::Lzma1Options> for LzmaOptions {
+    fn from(options: &super::Lzma1Options) -> Self {
+        let raw = options.as_raw();
+        let mode = match raw.mode {
+            liblzma_sys::lzma_mode_LZMA_MODE_FAST => CompressionMode::Fast,
+            _ => CompressionMode::Normal,
+        };
+        let mf = match raw.mf {
+            liblzma_sys::lzma_match_finder_LZMA_MF_HC3 => MatchFinder::Hc3,
+            liblzma_sys::lzma_match_finder_LZMA_MF_BT2 => MatchFinder::Bt2,
+            liblzma_sys::lzma_match_finder_LZMA_MF_BT3 => MatchFinder::Bt3,
+            liblzma_sys::lzma_match_finder_LZMA_MF_BT4 => MatchFinder::Bt4,
+            _ => MatchFinder::Hc4,
+        };
+
+        Self {
+            dict_size: raw.dict_size,
+            lc: raw.lc,
+            lp: raw.lp,
+            pb: raw.pb,
+            mode,
+            nice_len: raw.nice_len,
+            mf,
+            depth: raw.depth,
+            preset_dict: None,
+            ext_flags: 0,
+            ext_size_low: 0,
+            ext_size_high: 0,
+        }
+    }
+}
+
 /// Options for BCJ (Branch/Call/Jump) filters.
 #[derive(Debug, Clone, Default)]
 pub struct BcjOptions {

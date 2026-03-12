@@ -196,6 +196,37 @@ add_test!(lzma_format_via_xz, async {
     fixture.assert_files(&[FILE_NAME], &[data]);
 });
 
+// Test `.xz` mode accepts `--lzma2` together with a custom suffix.
+add_test!(xz_format_with_lzma2_suffix_roundtrip, async {
+    const FILE_NAME: &str = "lzma2_suffix.txt";
+    const XZ_FILE: &str = "lzma2_suffix.txt.foo";
+
+    let data = SAMPLE_TEXT.as_bytes();
+    let mut fixture = Fixture::with_file(FILE_NAME, data);
+
+    let file_path = fixture.path(FILE_NAME);
+    let xz_path = fixture.path(XZ_FILE);
+
+    let output = fixture
+        .run_cargo(
+            "xz",
+            &["-z", "-k", "--suffix=.foo", "--lzma2=preset=0", &file_path],
+        )
+        .await;
+    assert!(output.status.success());
+    assert!(fixture.file_exists(XZ_FILE));
+
+    fixture.remove_file(FILE_NAME);
+
+    let output = fixture
+        .run_cargo("xz", &["-d", "--suffix=.foo", &xz_path])
+        .await;
+    assert!(output.status.success());
+
+    fixture.assert_files(&[FILE_NAME], &[data]);
+    assert!(!fixture.file_exists(XZ_FILE));
+});
+
 // Test raw mode accepts an explicit suffix in file mode for compression and decompression.
 add_test!(raw_format_with_suffix_roundtrip, async {
     const FILE_NAME: &str = "raw_suffix.txt";

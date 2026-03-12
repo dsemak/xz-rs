@@ -71,6 +71,7 @@ impl LzCatOpts {
             format: xz_core::config::DecodeMode::Lzma,
             check: xz_core::options::IntegrityCheck::None,
             lzma1: None,
+            lzma2: None,
             robot: false,
             suffix: None,
             single_stream: self.single_stream,

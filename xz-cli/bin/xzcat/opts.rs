@@ -71,6 +71,7 @@ impl XzCatOpts {
             format: xz_core::config::DecodeMode::Auto,
             check: xz_core::options::IntegrityCheck::Crc64,
             lzma1: None,
+            lzma2: None,
             robot: false,
             suffix: None,
             single_stream: self.single_stream,
