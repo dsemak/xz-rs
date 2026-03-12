@@ -2,6 +2,7 @@
 
 #[cfg(feature = "async")]
 mod r#async;
+mod decode;
 mod sync;
 
 #[cfg(feature = "async")]

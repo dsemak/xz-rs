@@ -340,6 +340,17 @@ add_test!(good_lzip_vectors_decode_expected_output, async {
     }
 });
 
+// Test `.lz` v0 with trailing bytes must still decode.
+add_test!(lzip_v0_trailing_bytes_are_ignored, async {
+    let vector = Vector::bundled("good-1-v0-trailing-1.lz");
+    let mut fixture = Fixture::with_vector(&vector);
+    let vector_path = fixture.path(vector.name());
+
+    let output = fixture.run_cargo("xz", &["-d", "-c", &vector_path]).await;
+    assert!(output.status.success());
+    assert_eq!(output.stdout_raw.as_slice(), HELLO_WORLD);
+});
+
 // Test corrupt and unsupported `.lz` vectors are rejected.
 add_test!(bad_and_unsupported_lzip_vectors_are_rejected, async {
     let rejected_vectors = [
