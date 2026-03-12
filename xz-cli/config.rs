@@ -59,6 +59,8 @@ pub struct CliConfig {
     pub check: IntegrityCheck,
     /// Optional LZMA1 encoder options string (from `--lzma1[=OPTS]`)
     pub lzma1: Option<String>,
+    /// Optional LZMA2 encoder options string (from `--lzma2[=OPTS]`)
+    pub lzma2: Option<String>,
     /// Machine-readable output
     pub robot: bool,
     /// Custom suffix for compressed files
@@ -88,6 +90,7 @@ impl Default for CliConfig {
             format: DecodeMode::Auto,
             check: IntegrityCheck::Crc64,
             lzma1: None,
+            lzma2: None,
             robot: false,
             suffix: None,
             single_stream: false,

@@ -138,6 +138,16 @@ pub struct XzOpts {
     #[arg(long = "lzma1", value_name = "OPTS", num_args = 0..=1, default_missing_value = "")]
     pub lzma1: Option<String>,
 
+    /// LZMA2 filter options used with `.xz` output
+    #[arg(
+        long = "lzma2",
+        value_name = "OPTS",
+        num_args = 0..=1,
+        default_missing_value = "",
+        conflicts_with = "lzma1"
+    )]
+    pub lzma2: Option<String>,
+
     /// Read filenames from file (one per line)
     #[arg(
         long = "files",
@@ -280,6 +290,7 @@ impl XzOpts {
             format,
             check: self.check_type_for_format(format)?,
             lzma1: self.lzma1.clone(),
+            lzma2: self.lzma2.clone(),
             robot: self.robot,
             suffix: self.suffix.clone(),
             single_stream: self.single_stream,
@@ -323,6 +334,7 @@ mod tests {
             format: None,
             check: None,
             lzma1: None,
+            lzma2: None,
             files_from_file: None,
             files0_from_file: None,
             robot: false,
@@ -395,5 +407,19 @@ mod tests {
         assert!(opts.stdout);
         assert_eq!(opts.memory, Some(1024 * 1024));
         assert_eq!(opts.files, ["file.xz"]);
+    }
+
+    /// Test `--lzma2[=OPTS]` is accepted and stored in CLI config.
+    #[test]
+    fn parse_accepts_lzma2_options() {
+        let opts = XzOpts::try_parse_from(["xz", "--lzma2=preset=0", "file.txt"])
+            .unwrap_or_else(|e| panic!("failed to parse --lzma2: {e}"));
+
+        assert_eq!(opts.lzma2.as_deref(), Some("preset=0"));
+
+        let config = opts
+            .config()
+            .unwrap_or_else(|e| panic!("failed to build config: {e}"));
+        assert_eq!(config.lzma2.as_deref(), Some("preset=0"));
     }
 }
