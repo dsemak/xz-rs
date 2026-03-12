@@ -4,11 +4,13 @@ use lzma_safe::Action;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 use crate::buffer::Buffer;
-use crate::config::StreamSummary;
+use crate::config::{DecompressionOutcome, StreamSummary};
 use crate::error::{BackendError, Result};
 use crate::options::{BuiltDecoder, BuiltEncoder, CompressionOptions, DecompressionOptions};
 
-use super::decode::{DecoderSession, ReadAction, RunAction};
+use super::decode::{
+    passthrough_async, probe_async, DecoderSession, PrefixedAsyncReader, ReadAction, RunAction,
+};
 
 /// Compresses data asynchronously from a reader into a writer using the provided options.
 ///
@@ -99,6 +101,26 @@ where
 /// - Memory limits are exceeded during decompression
 /// - Threading is requested for unsupported decode modes
 pub async fn decompress_async<R, W>(
+    mut reader: R,
+    mut writer: W,
+    options: &DecompressionOptions,
+) -> Result<DecompressionOutcome>
+where
+    R: AsyncRead + Unpin,
+    W: AsyncWrite + Unpin,
+{
+    let probe = probe_async(&mut reader, options).await?;
+    if probe.is_passthrough() {
+        let summary = passthrough_async(probe.prefix(), &mut reader, &mut writer).await?;
+        return Ok(probe.build_outcome(summary));
+    }
+
+    let mut reader = PrefixedAsyncReader::new(probe.prefix().to_vec(), reader);
+    let summary = decompress_stream_async(&mut reader, &mut writer, options).await?;
+    Ok(probe.build_outcome(summary))
+}
+
+async fn decompress_stream_async<R, W>(
     mut reader: R,
     mut writer: W,
     options: &DecompressionOptions,
@@ -253,7 +275,7 @@ mod tests {
     use std::num::{NonZeroU64, NonZeroUsize};
     use std::time::Duration;
 
-    use crate::config::DecodeMode;
+    use crate::config::{DecodeMode, DecompressionStatus, UnknownInputPolicy};
     use crate::options::{
         Compression, CompressionOptions, DecompressionOptions, Flags, IntegrityCheck,
     };
@@ -793,6 +815,37 @@ mod tests {
         let mut decompressed = Vec::new();
 
         let result = decompress_async(reader, &mut decompressed, &decompression_options).await;
+
+        assert!(matches!(result, Err(crate::error::Error::Backend(_))));
+    });
+
+    // Test that auto mode can passthrough unknown input when explicitly enabled.
+    async_test!(unknown_input_passthrough_policy_copies_original_bytes, {
+        let input = b"foo";
+        let options = DecompressionOptions::default()
+            .with_unknown_input_policy(UnknownInputPolicy::Passthrough);
+        let mut output = Vec::new();
+
+        let outcome = decompress_async(input.as_slice(), &mut output, &options)
+            .await
+            .unwrap();
+
+        assert_eq!(outcome.status, DecompressionStatus::Passthrough);
+        assert_eq!(outcome.bytes_read, input.len() as u64);
+        assert_eq!(outcome.bytes_written, input.len() as u64);
+        assert_eq!(outcome.unsupported_check_id, None);
+        assert_eq!(output, input);
+    });
+
+    // Test that unknown input still fails without the passthrough policy.
+    async_test!(unknown_input_without_passthrough_policy_errors, {
+        let mut output = Vec::new();
+        let result = decompress_async(
+            b"foo".as_slice(),
+            &mut output,
+            &DecompressionOptions::default(),
+        )
+        .await;
 
         assert!(matches!(result, Err(crate::error::Error::Backend(_))));
     });

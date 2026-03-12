@@ -335,6 +335,19 @@ add_test!(raw_format_stdin_writes_to_stdout, async {
     assert!(!output.stdout_raw.is_empty());
 });
 
+// Test auto-decompress mode copies unknown stdin to stdout when `-c` is used.
+add_test!(auto_decompress_unknown_stdin_copies_to_stdout, async {
+    let mut fixture = Fixture::with_file("stdin-anchor.txt", b"anchor");
+
+    let input = b"foo";
+    let output = fixture
+        .run_with_stdin_raw(BinaryType::cargo("xz"), &["-d", "-c"], input)
+        .await;
+
+    assert!(output.status.success());
+    assert_eq!(output.stdout_raw.as_slice(), input);
+});
+
 // Test raw mode rejects --files without a suffix because it cannot derive output names.
 add_test!(raw_format_files_requires_suffix, async {
     const FILE_NAME: &str = "raw_files_input.txt";

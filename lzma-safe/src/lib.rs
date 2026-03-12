@@ -45,6 +45,9 @@ pub use encoder::{AloneEncoder, Encoder, RawEncoder};
 pub use error::{Error, Result};
 pub use stream::{BlockInfo, Index, IndexEntry, IndexIterMode, IndexIterator, Stream, StreamInfo};
 
+/// Size of the legacy LZMA_Alone header in bytes.
+pub const LZMA_ALONE_HEADER_SIZE: usize = liblzma_sys::LZMA_ALONE_HEADER_SIZE;
+
 /// Access to the liblzma version reported by the linked C library.
 pub struct Version;
 

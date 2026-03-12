@@ -1,13 +1,22 @@
 //! Shared decoder state machine used by sync and async pipelines.
 
+use std::io::{self, Read};
+
 use lzma_safe::Action;
 
 use crate::buffer::Buffer;
-use crate::config::StreamSummary;
+use crate::config::{
+    DecodeMode, DecompressionOutcome, DecompressionStatus, StreamSummary, UnknownInputPolicy,
+};
 use crate::error::{BackendError, Error, Result};
+use crate::header::{
+    detect_unsupported_xz_check_id, is_known_decode_format, read_decode_format_probe_prefix,
+    LZIP_HEADER_MAGIC,
+};
 use crate::options::{BuiltDecoder, DecompressionOptions, Flags};
 
-const LZIP_MAGIC: [u8; 4] = *b"LZIP";
+/// Size of the I/O buffer used by the decoder during passthrough.
+const IO_BUFFER_SIZE: usize = 8192;
 
 /// Describes how the next read should populate the input buffer.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -42,6 +51,206 @@ impl RunOutcome {
     fn new(written: usize, action: RunAction) -> Self {
         Self { written, action }
     }
+}
+
+/// Probe result captured before starting decompression.
+pub struct DecompressionProbe {
+    prefix: Vec<u8>,
+    status: DecompressionStatus,
+    unsupported_check_id: Option<u32>,
+}
+
+impl DecompressionProbe {
+    /// Probe a synchronous reader before creating the decode stream.
+    pub fn read_sync<R: Read>(reader: &mut R, options: &DecompressionOptions) -> io::Result<Self> {
+        if options.mode() == DecodeMode::Raw {
+            return Ok(Self::decoded(Vec::new(), None));
+        }
+
+        let prefix = read_decode_format_probe_prefix(reader)?;
+        Ok(Self::classify(prefix, options))
+    }
+
+    /// Returns `true` if the pipeline should passthrough the input.
+    pub fn is_passthrough(&self) -> bool {
+        self.status == DecompressionStatus::Passthrough
+    }
+
+    /// Returns the preserved probe prefix.
+    pub fn prefix(&self) -> &[u8] {
+        &self.prefix
+    }
+
+    /// Builds the final decompression outcome from a stream summary.
+    pub fn build_outcome(&self, summary: StreamSummary) -> DecompressionOutcome {
+        DecompressionOutcome::new(summary, self.status, self.unsupported_check_id)
+    }
+
+    fn decoded(prefix: Vec<u8>, unsupported_check_id: Option<u32>) -> Self {
+        Self {
+            prefix,
+            status: DecompressionStatus::Decompressed,
+            unsupported_check_id,
+        }
+    }
+
+    fn classify(prefix: Vec<u8>, options: &DecompressionOptions) -> Self {
+        let unsupported_check_id = detect_unsupported_xz_check_id(&prefix);
+        let should_passthrough = options.mode() == DecodeMode::Auto
+            && options.unknown_input_policy() == UnknownInputPolicy::Passthrough
+            && !prefix.is_empty()
+            && !is_known_decode_format(&prefix);
+
+        if should_passthrough {
+            Self {
+                prefix,
+                status: DecompressionStatus::Passthrough,
+                unsupported_check_id: None,
+            }
+        } else {
+            Self::decoded(prefix, unsupported_check_id)
+        }
+    }
+}
+
+/// Copy already-read prefix and the remaining reader contents to the output unchanged.
+pub fn passthrough_sync<R: Read, W: io::Write>(
+    prefix: &[u8],
+    reader: &mut R,
+    writer: &mut W,
+) -> io::Result<StreamSummary> {
+    let mut bytes_read = 0_u64;
+    let mut bytes_written = 0_u64;
+
+    if !prefix.is_empty() {
+        writer.write_all(prefix)?;
+        let prefix_len = prefix.len() as u64;
+        bytes_read += prefix_len;
+        bytes_written += prefix_len;
+    }
+
+    let mut buffer = [0_u8; IO_BUFFER_SIZE];
+    loop {
+        let read = reader.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+
+        writer.write_all(&buffer[..read])?;
+        bytes_read += read as u64;
+        bytes_written += read as u64;
+    }
+
+    writer.flush()?;
+    Ok(StreamSummary::new(bytes_read, bytes_written))
+}
+
+#[cfg(feature = "async")]
+/// Async reader wrapper that drains a prefetched prefix before polling the inner reader.
+pub struct PrefixedAsyncReader<R> {
+    prefix: Vec<u8>,
+    prefix_pos: usize,
+    inner: R,
+}
+
+#[cfg(feature = "async")]
+impl<R> PrefixedAsyncReader<R> {
+    /// Creates a new async reader wrapper with a preserved prefix.
+    pub fn new(prefix: Vec<u8>, inner: R) -> Self {
+        Self {
+            prefix,
+            prefix_pos: 0,
+            inner,
+        }
+    }
+}
+
+#[cfg(feature = "async")]
+impl<R> tokio::io::AsyncRead for PrefixedAsyncReader<R>
+where
+    R: tokio::io::AsyncRead + Unpin,
+{
+    fn poll_read(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> std::task::Poll<io::Result<()>> {
+        if self.prefix_pos < self.prefix.len() {
+            let remaining = self.prefix.len() - self.prefix_pos;
+            let to_copy = remaining.min(buf.remaining());
+            let end = self.prefix_pos + to_copy;
+            buf.put_slice(&self.prefix[self.prefix_pos..end]);
+            self.prefix_pos = end;
+            return std::task::Poll::Ready(Ok(()));
+        }
+
+        std::pin::Pin::new(&mut self.inner).poll_read(cx, buf)
+    }
+}
+
+#[cfg(feature = "async")]
+/// Probe an async reader before starting decompression.
+pub async fn probe_async<R>(
+    reader: &mut R,
+    options: &DecompressionOptions,
+) -> io::Result<DecompressionProbe>
+where
+    R: tokio::io::AsyncRead + Unpin,
+{
+    if options.mode() == DecodeMode::Raw {
+        return Ok(DecompressionProbe::decoded(Vec::new(), None));
+    }
+
+    let mut prefix = Vec::with_capacity(crate::header::DECODE_FORMAT_PROBE_SIZE);
+    let mut buffer = [0_u8; crate::header::DECODE_FORMAT_PROBE_SIZE];
+
+    while prefix.len() < buffer.len() {
+        let offset = prefix.len();
+        let read = tokio::io::AsyncReadExt::read(reader, &mut buffer[offset..]).await?;
+        if read == 0 {
+            break;
+        }
+        prefix.extend_from_slice(&buffer[offset..offset + read]);
+    }
+
+    Ok(DecompressionProbe::classify(prefix, options))
+}
+
+#[cfg(feature = "async")]
+/// Copy already-read prefix and the remaining async reader contents to the output unchanged.
+pub async fn passthrough_async<R, W>(
+    prefix: &[u8],
+    reader: &mut R,
+    writer: &mut W,
+) -> io::Result<StreamSummary>
+where
+    R: tokio::io::AsyncRead + Unpin,
+    W: tokio::io::AsyncWrite + Unpin,
+{
+    let mut bytes_read = 0_u64;
+    let mut bytes_written = 0_u64;
+
+    if !prefix.is_empty() {
+        tokio::io::AsyncWriteExt::write_all(writer, prefix).await?;
+        let prefix_len = prefix.len() as u64;
+        bytes_read += prefix_len;
+        bytes_written += prefix_len;
+    }
+
+    let mut buffer = [0_u8; IO_BUFFER_SIZE];
+    loop {
+        let read = tokio::io::AsyncReadExt::read(reader, &mut buffer).await?;
+        if read == 0 {
+            break;
+        }
+
+        tokio::io::AsyncWriteExt::write_all(writer, &buffer[..read]).await?;
+        bytes_read += read as u64;
+        bytes_written += read as u64;
+    }
+
+    tokio::io::AsyncWriteExt::flush(writer).await?;
+    Ok(StreamSummary::new(bytes_read, bytes_written))
 }
 
 /// Shared decoder session state.
@@ -282,7 +491,7 @@ impl DecoderBootstrap {
         options: &DecompressionOptions,
         first_chunk: &[u8],
     ) -> Result<Self> {
-        let detected_lzip_input = first_chunk.starts_with(&LZIP_MAGIC);
+        let detected_lzip_input = first_chunk.starts_with(&LZIP_HEADER_MAGIC);
         if detected_lzip_input && options.flags().is_concatenated() {
             let mut lzip_flags = options.flags();
             lzip_flags.remove(Flags::CONCATENATED);
@@ -332,5 +541,5 @@ pub fn should_stop_after_stream_end(
         return true;
     }
 
-    detected_lzip_input && !next_bytes.is_empty() && !next_bytes.starts_with(&LZIP_MAGIC)
+    detected_lzip_input && !next_bytes.is_empty() && !next_bytes.starts_with(&LZIP_HEADER_MAGIC)
 }

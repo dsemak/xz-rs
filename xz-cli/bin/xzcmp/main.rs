@@ -119,8 +119,12 @@ fn materialize_for_cmp(
 
     let tmp = NamedTempFile::new().map_err(|e| e.to_string())?;
     {
+        // `xzcmp` always reads from named paths here; stdin is passed through
+        // directly to `cmp` without going through the decompressor.
+        let stdin_input = false;
+
         let mut out = File::create(tmp.path()).map_err(|e| e.to_string())?;
-        decompress_file(&mut input, &mut out, config).map_err(|e| e.to_string())?;
+        decompress_file(&mut input, &mut out, config, stdin_input).map_err(|e| e.to_string())?;
     }
 
     let out_path = tmp.path().to_path_buf();
