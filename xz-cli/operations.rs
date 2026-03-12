@@ -2,18 +2,17 @@
 
 use std::fs::File;
 use std::io;
-use std::io::Read as _;
 
 use xz_core::{
     config::EncodeFormat,
-    detect_unsupported_xz_check_id, file_info,
+    file_info,
     options::lzma1::Lzma1Options,
     options::{
         Compression, CompressionOptions, DecompressionOptions, FilterConfig, FilterOptions,
         FilterType, Flags, LzmaOptions,
     },
     pipeline::{compress, decompress},
-    ratio, read_xz_stream_header_prefix, Error as CoreError,
+    ratio, Error as CoreError, UnknownInputPolicy,
 };
 
 use crate::config::CliConfig;
@@ -327,12 +326,12 @@ fn decompress_raw(
 
     options = apply_memlimit(options, config);
 
-    let summary = decompress(input, output, &options).map_err(|e| {
+    let outcome = decompress(input, output, &options).map_err(|e| {
         let message = xz_message_from_core_error(&e);
         DiagnosticCause::from(Error::Decompression { message })
     })?;
 
-    emit_decompress_summary(config, summary.bytes_read, summary.bytes_written);
+    emit_decompress_summary(config, outcome.bytes_read, outcome.bytes_written);
     Ok(())
 }
 
@@ -358,6 +357,7 @@ fn warn_unsupported_check(unsupported_check_id: Option<u32>, config: &CliConfig)
 /// * `input` - Reader providing compressed XZ or LZMA data
 /// * `output` - Writer receiving decompressed data
 /// * `config` - CLI configuration specifying threads, memory limits, and verbosity
+/// * `stdin_input` - Indicates that the current input source is standard input
 ///
 /// # Returns
 ///
@@ -376,37 +376,42 @@ pub fn decompress_file(
     mut input: impl io::Read,
     mut output: impl io::Write,
     config: &CliConfig,
+    stdin_input: bool,
 ) -> Result<()> {
     if config.format == xz_core::config::DecodeMode::Raw {
         return decompress_raw(&mut input, &mut output, config);
     }
 
-    // Read and preserve a small prefix so we can inspect the XZ Stream Header without
-    // losing bytes from the actual decode stream.
-    let prefix = read_xz_stream_header_prefix(&mut input).map_err(|source| {
-        DiagnosticCause::from(Error::OpenInput {
-            source: IoErrorNoCode::new(source),
-        })
-    })?;
-
-    let unsupported_check_id = detect_unsupported_xz_check_id(&prefix);
-
-    let mut input = io::Cursor::new(prefix).chain(input);
+    let unknown_input_policy = if config.mode == crate::config::OperationMode::Decompress
+        && config.stdout
+        && config.format == xz_core::config::DecodeMode::Auto
+        && stdin_input
+    {
+        // Mirror upstream `xz`: when reading from stdin in `xz -dc`-style
+        // invocation, unknown input is copied to stdout unchanged.
+        UnknownInputPolicy::Passthrough
+    } else {
+        // For named files and all other modes, unknown input must be
+        // treated as an error so that corrupted `.xz` files (including
+        // those with invalid header magic) cause a non-zero exit status.
+        UnknownInputPolicy::Error
+    };
 
     let options = DecompressionOptions::default()
         .with_mode(config.format)
-        .with_flags(build_decoder_flags(config));
+        .with_flags(build_decoder_flags(config))
+        .with_unknown_input_policy(unknown_input_policy);
     let options = apply_threads_for_decompression(options, config)?;
     let options = apply_memlimit(options, config);
 
-    let summary = decompress(&mut input, &mut output, &options).map_err(|e| {
+    let outcome = decompress(&mut input, &mut output, &options).map_err(|e| {
         let message = xz_message_from_core_error(&e);
         DiagnosticCause::from(Error::Decompression { message })
     })?;
 
-    emit_decompress_summary(config, summary.bytes_read, summary.bytes_written);
+    emit_decompress_summary(config, outcome.bytes_read, outcome.bytes_written);
 
-    warn_unsupported_check(unsupported_check_id, config)
+    warn_unsupported_check(outcome.unsupported_check_id, config)
 }
 
 /// Lists information about an XZ compressed file.

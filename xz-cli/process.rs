@@ -158,7 +158,7 @@ pub fn process_file(input_path: &str, config: &CliConfig) -> Result<()> {
             compress_file(input, output, config)?;
         }
         OperationMode::Decompress | OperationMode::Cat => {
-            match decompress_file(input, output, config) {
+            match decompress_file(input, output, config, is_stdin) {
                 Ok(()) => (),
                 Err(DiagnosticCause::Warning(
                     w @ crate::error::Warning::UnsupportedCheck { .. },
@@ -171,7 +171,7 @@ pub fn process_file(input_path: &str, config: &CliConfig) -> Result<()> {
         }
         OperationMode::Test => {
             // In test mode, decompress but discard output
-            decompress_file(input, io::sink(), config)?;
+            decompress_file(input, io::sink(), config, is_stdin)?;
 
             if config.verbose || config.robot {
                 if config.robot {

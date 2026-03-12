@@ -16,3 +16,6 @@ include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 // This is typically used for pre-generated bindings or when bindgen is not available.
 #[cfg(not(feature = "bindgen"))]
 include!("lzma_bindings.rs");
+
+/// Size of the legacy LZMA_Alone header in bytes.
+pub const LZMA_ALONE_HEADER_SIZE: usize = 1 + 4 + 8;

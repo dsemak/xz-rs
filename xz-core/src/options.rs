@@ -18,7 +18,7 @@ pub mod lzma1 {
 }
 
 use crate::config::DecodeMode;
-use crate::config::EncodeFormat;
+use crate::config::{EncodeFormat, UnknownInputPolicy};
 use crate::error::{Error, Result};
 use crate::threading::{sanitize_threads, Threading};
 
@@ -366,6 +366,7 @@ pub struct DecompressionOptions {
     memlimit_stop: Option<NonZeroU64>,
     flags: DecoderFlags,
     mode: DecodeMode,
+    unknown_input_policy: UnknownInputPolicy,
     raw_lzma1: Option<lzma1::Lzma1Options>,
     timeout: Option<Duration>,
     input_buffer_size: NonZeroUsize,
@@ -380,6 +381,7 @@ impl Default for DecompressionOptions {
             memlimit_stop: None,
             flags: DecoderFlags::empty(),
             mode: DecodeMode::Auto,
+            unknown_input_policy: UnknownInputPolicy::Error,
             raw_lzma1: None,
             timeout: None,
             input_buffer_size: NonZeroUsize::new(DEFAULT_INPUT_BUFFER).unwrap(),
@@ -447,11 +449,19 @@ impl DecompressionOptions {
     /// Available modes:
     ///
     /// - `DecodeMode::Auto`: Automatically detect XZ or legacy `.lzma` format (single-threaded only)
+    ///   and lzip `.lz` members.
     /// - `DecodeMode::Xz`: Force XZ format parsing (supports multi-threading)
     /// - `DecodeMode::Lzma`: Force LZMA format parsing (single-threaded only)
     #[must_use]
     pub fn with_mode(mut self, mode: DecodeMode) -> Self {
         self.mode = mode;
+        self
+    }
+
+    /// Controls how auto-detect mode handles input that doesn't look like a supported container.
+    #[must_use]
+    pub fn with_unknown_input_policy(mut self, policy: UnknownInputPolicy) -> Self {
+        self.unknown_input_policy = policy;
         self
     }
 
@@ -588,6 +598,14 @@ impl DecompressionOptions {
     pub(crate) fn flags(&self) -> DecoderFlags {
         self.flags
     }
+
+    pub(crate) fn mode(&self) -> DecodeMode {
+        self.mode
+    }
+
+    pub(crate) fn unknown_input_policy(&self) -> UnknownInputPolicy {
+        self.unknown_input_policy
+    }
 }
 
 /// Converts a `Duration` to a timeout value in milliseconds for the LZMA library.
@@ -694,6 +712,7 @@ mod tests {
         assert_eq!(options.memlimit.get(), 256 * 1024 * 1024); // 256MB default
         assert_eq!(options.threads, Threading::Auto);
         assert_eq!(options.mode, DecodeMode::Auto);
+        assert_eq!(options.unknown_input_policy, UnknownInputPolicy::Error);
         assert!(options.flags.is_empty());
     }
 
@@ -725,6 +744,7 @@ mod tests {
             .with_memlimit_stop(Some(memlimit_stop))
             .with_flags(Flags::CONCATENATED)
             .with_mode(DecodeMode::Xz)
+            .with_unknown_input_policy(UnknownInputPolicy::Passthrough)
             .with_timeout(Some(Duration::from_secs(10)));
 
         assert_eq!(options.threads, Threading::Exact(2));
@@ -732,6 +752,10 @@ mod tests {
         assert_eq!(options.memlimit_stop, Some(memlimit_stop));
         assert!(options.flags.is_concatenated());
         assert_eq!(options.mode, DecodeMode::Xz);
+        assert_eq!(
+            options.unknown_input_policy,
+            UnknownInputPolicy::Passthrough
+        );
         assert_eq!(options.timeout, Some(Duration::from_secs(10)));
     }
 

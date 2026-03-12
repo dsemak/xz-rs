@@ -128,8 +128,12 @@ fn prepare_input_for_pager(
 
     let tmp = NamedTempFile::new().map_err(|err| err.to_string())?;
     {
+        // `xzless` always reads from named files here, never stdin.
+        let stdin_input = false;
+
         let mut out = File::create(tmp.path()).map_err(|err| err.to_string())?;
-        decompress_file(&mut input, &mut out, config).map_err(|err| err.to_string())?;
+        decompress_file(&mut input, &mut out, config, stdin_input)
+            .map_err(|err| err.to_string())?;
     }
 
     let out_path = tmp.path().to_path_buf();

@@ -64,7 +64,7 @@
 //! let mut output = Vec::new();
 //!
 //! let options = DecompressionOptions::default();
-//! let summary = decompress(
+//! let outcome = decompress(
 //!     &mut Cursor::new(&compressed_data),
 //!     &mut output,
 //!     &options,
@@ -72,7 +72,7 @@
 //! assert_eq!(output, input);
 //!
 //! println!("Decompressed {} bytes to {} bytes",
-//!          summary.bytes_read, summary.bytes_written);
+//!          outcome.bytes_read, outcome.bytes_written);
 //! # Ok(())
 //! # }
 //! ```
@@ -160,11 +160,12 @@ pub mod pipeline;
 
 pub use crate::error::{BackendError, Error, Result};
 pub use crate::header::{
-    detect_unsupported_xz_check_id, read_xz_stream_header_prefix, XZ_STREAM_HEADER_MAGIC,
-    XZ_STREAM_HEADER_SIZE,
+    detect_unsupported_xz_check_id, is_known_decode_format, read_decode_format_probe_prefix,
+    LZMA_ALONE_HEADER_SIZE, XZ_STREAM_HEADER_MAGIC,
 };
 pub use crate::threading::Threading;
 pub use buffer::{Allocator, Buffer, Deallocator, DeallocatorFn, GlobalAllocator};
+pub use config::{DecompressionOutcome, DecompressionStatus, UnknownInputPolicy};
 
 /// Calculates the compression/decompression ratio as a percentage.
 ///

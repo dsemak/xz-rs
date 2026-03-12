@@ -430,6 +430,7 @@ fn compress_decompress_roundtrip() {
         Cursor::new(&compressed),
         &mut decompressed,
         &decompress_config,
+        false,
     )
     .expect("Decompression should succeed");
 
@@ -511,7 +512,8 @@ fn decompress_corrupted_data() {
     let mut output_vec = Vec::new();
     let config = CliConfig::default();
 
-    let err = decompress_file(Cursor::new(corrupted_data), &mut output_vec, &config).unwrap_err();
+    let err =
+        decompress_file(Cursor::new(corrupted_data), &mut output_vec, &config, false).unwrap_err();
     assert!(matches!(
         err,
         DiagnosticCause::Error(Error::Decompression { .. })
@@ -559,6 +561,7 @@ fn extreme_mode_default_level() {
         Cursor::new(&output),
         &mut decompressed,
         &CliConfig::default(),
+        false,
     )
     .unwrap();
 
@@ -647,6 +650,7 @@ fn memory_limit_decompression() {
         Cursor::new(&compressed),
         &mut output_vec,
         &decompress_config,
+        false,
     )
     .expect("Decompression with memory limit should succeed");
 
@@ -671,7 +675,7 @@ fn zero_memory_limit() {
         ..Default::default()
     };
 
-    decompress_file(Cursor::new(&compressed), &mut output, &config)
+    decompress_file(Cursor::new(&compressed), &mut output, &config, false)
         .expect("Zero memory limit should not cause failure");
 }
 
@@ -714,7 +718,7 @@ fn default_decodes_concatenated_xz_streams() {
     };
 
     let mut decoded = Vec::new();
-    match decompress_file(Cursor::new(concatenated), &mut decoded, &config) {
+    match decompress_file(Cursor::new(concatenated), &mut decoded, &config, false) {
         Ok(()) => {}
         Err(err) => panic!("decompress_file(default) failed: {err:?}"),
     }
@@ -744,7 +748,7 @@ fn single_stream_ignores_trailing_stream() {
     };
 
     let mut decoded = Vec::new();
-    match decompress_file(Cursor::new(concatenated), &mut decoded, &config) {
+    match decompress_file(Cursor::new(concatenated), &mut decoded, &config, false) {
         Ok(()) => {}
         Err(err) => panic!("decompress_file(--single-stream) failed: {err:?}"),
     }
