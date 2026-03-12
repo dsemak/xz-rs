@@ -9,6 +9,8 @@ use crate::config::StreamSummary;
 use crate::error::{BackendError, Result};
 use crate::options::{BuiltDecoder, BuiltEncoder, CompressionOptions, DecompressionOptions};
 
+use super::decode::{DecoderSession, ReadAction, RunAction};
+
 /// Compresses data from a reader into a writer using the provided options.
 ///
 /// # Parameters
@@ -106,111 +108,34 @@ where
     R: Read,
     W: Write,
 {
-    let mut decoder = options.build_decoder()?;
-    let mut input = vec![0u8; options.input_capacity()];
-    let mut output = Buffer::new(options.output_capacity())?;
-    let mut total_in = 0u64;
-    let mut total_out = 0u64;
-    let mut pending_len: usize = 0;
+    let mut session = DecoderSession::new(options)?;
 
     loop {
-        // Ensure we have some input to feed the decoder.
-        if pending_len == 0 {
-            let read = reader.read(&mut input)?;
-            if read == 0 {
-                // If no data was ever processed, this is an invalid/empty input
-                if total_in == 0 {
-                    return Err(BackendError::DataError.into());
-                }
-                finish_decoder_sync(&mut decoder, &mut writer, &mut output, &mut total_out, &[])?;
-                return Ok(StreamSummary::new(total_in, total_out));
-            }
-            pending_len = read;
+        let outcome = session.run(options)?;
+        if outcome.written > 0 {
+            writer.write_all(session.output_chunk(outcome.written))?;
+            session.record_output(outcome.written);
         }
 
-        let mut consumed = 0usize;
-        while consumed < pending_len {
-            let (used, written) =
-                decoder.process(&input[consumed..pending_len], &mut output, Action::Run)?;
-            if written > 0 {
-                writer.write_all(&output[..written])?;
-                total_out += written as u64;
+        match outcome.action {
+            RunAction::Continue => {}
+            RunAction::Finished => {
+                writer.flush()?;
+                return Ok(session.summary());
             }
-            consumed += used;
-            total_in += used as u64;
-
-            if decoder.is_finished() {
-                // In non-concatenated mode, "finished" means we intentionally stop after the first
-                // stream and ignore any remaining input. This matches the xz(1) --single-stream
-                // semantics.
-                if !options.flags().is_concatenated() {
-                    writer.flush()?;
-                    return Ok(StreamSummary::new(total_in, total_out));
+            RunAction::Read(mode) => {
+                let read = {
+                    let buffer = session.read_buffer_mut(options, mode)?;
+                    reader.read(buffer)?
+                };
+                if session.commit_read(options, mode, read)? == ReadAction::Finish {
+                    let pending = session.pending_bytes().to_vec();
+                    let (decoder, output, total_out) = session.finish_parts();
+                    finish_decoder_sync(decoder, &mut writer, output, total_out, &pending)?;
+                    return Ok(session.summary());
                 }
-
-                // In concatenated mode, `StreamEnd` can occur before we have observed EOF at the
-                // `Read` layer (e.g. when the next stream is already buffered or due to backend
-                // semantics). Treat this as end-of-one-stream and continue decoding by starting a
-                // fresh decoder for the next stream.
-                //
-                // Any trailing garbage will be rejected naturally when the next decoder fails to
-                // parse a valid stream.
-                let remaining = pending_len - consumed;
-                decoder = options.build_decoder()?;
-                if remaining > 0 {
-                    // Continue with the still-buffered bytes.
-                    input.copy_within(consumed..pending_len, 0);
-                    pending_len = remaining;
-                } else {
-                    // No buffered bytes left; read more input to determine whether there's another
-                    // stream or we are done.
-                    let read = reader.read(&mut input)?;
-                    if read == 0 {
-                        writer.flush()?;
-                        return Ok(StreamSummary::new(total_in, total_out));
-                    }
-                    pending_len = read;
-                }
-                consumed = 0;
-                continue;
-            }
-
-            if used == 0 && written == 0 {
-                // Decoder made no progress with current input; read more and append.
-                if pending_len == input.len() {
-                    // Grow the buffer to accommodate more pending input.
-                    let grow_by = options.input_capacity().max(1);
-                    input.try_reserve(grow_by).map_err(|_| {
-                        crate::error::Error::AllocationFailed {
-                            capacity: input.len() + grow_by,
-                        }
-                    })?;
-                    input.resize(input.len() + grow_by, 0);
-                }
-
-                let read = reader.read(&mut input[pending_len..])?;
-                if read == 0 {
-                    // No more input available; finish using the still-pending bytes.
-                    finish_decoder_sync(
-                        &mut decoder,
-                        &mut writer,
-                        &mut output,
-                        &mut total_out,
-                        &input[consumed..pending_len],
-                    )?;
-                    return Ok(StreamSummary::new(total_in, total_out));
-                }
-
-                pending_len += read;
             }
         }
-
-        // Move the unconsumed tail to the beginning of the buffer.
-        let remaining = pending_len - consumed;
-        if remaining > 0 {
-            input.copy_within(consumed..pending_len, 0);
-        }
-        pending_len = remaining;
     }
 }
 
@@ -679,6 +604,19 @@ mod tests {
         matches!(result.unwrap_err(), crate::error::Error::Backend(_));
     }
 
+    /// Test that an empty compressed input is rejected as invalid data.
+    #[test]
+    fn sync_error_empty_compressed_input() {
+        let mut decompressed = Vec::new();
+        let options = DecompressionOptions::default();
+        let result = decompress([].as_slice(), &mut decompressed, &options);
+
+        assert!(matches!(
+            result,
+            Err(crate::error::Error::Backend(BackendError::DataError))
+        ));
+    }
+
     /// Test error handling - memory limit exceeded
     #[test]
     fn sync_error_memory_limit() {
@@ -781,6 +719,46 @@ mod tests {
         let mut decompressed = Vec::new();
         let _ = decompress(&mut compressed_cursor, &mut decompressed, &options).unwrap();
         assert!(decompressed == SAMPLE);
+    }
+
+    /// Test that decoding succeeds when the decoder must grow pending input.
+    #[test]
+    fn sync_decompress_grows_pending_input_buffer() {
+        let mut compressed = Vec::new();
+        let compression_options = CompressionOptions::default();
+        let _ = compress(SAMPLE, &mut compressed, &compression_options).unwrap();
+
+        let tiny_size = NonZeroUsize::new(1).unwrap();
+        let decompression_options = DecompressionOptions::default()
+            .with_input_buffer_size(tiny_size)
+            .with_output_buffer_size(NonZeroUsize::new(64).unwrap());
+        let reader = SlowReader::new(&compressed, 1);
+        let mut decompressed = Vec::new();
+
+        let summary = decompress(reader, &mut decompressed, &decompression_options).unwrap();
+
+        assert_eq!(summary.bytes_written, SAMPLE.len() as u64);
+        assert_eq!(decompressed, SAMPLE);
+    }
+
+    /// Test that EOF with pending bytes remains a backend decoding error.
+    #[test]
+    fn sync_truncated_stream_with_pending_bytes_returns_data_error() {
+        let mut compressed = Vec::new();
+        let compression_options = CompressionOptions::default();
+        let _ = compress(SAMPLE, &mut compressed, &compression_options).unwrap();
+        compressed.pop();
+
+        let tiny_size = NonZeroUsize::new(1).unwrap();
+        let decompression_options = DecompressionOptions::default()
+            .with_input_buffer_size(tiny_size)
+            .with_output_buffer_size(NonZeroUsize::new(64).unwrap());
+        let reader = SlowReader::new(&compressed, 1);
+        let mut decompressed = Vec::new();
+
+        let result = decompress(reader, &mut decompressed, &decompression_options);
+
+        assert!(matches!(result, Err(crate::error::Error::Backend(_))));
     }
 
     /// Test that concatenated `.xz` streams are decoded fully when `CONCATENATED` is set.
