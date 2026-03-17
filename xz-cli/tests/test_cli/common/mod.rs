@@ -6,9 +6,11 @@ use tokio::io::AsyncWriteExt;
 use tokio::sync::oneshot;
 
 mod data;
+mod upstream;
 mod vectors;
 
 pub use data::{generate_random_data, BINARY_DATA, REPETITIVE_DATA, SAMPLE_TEXT};
+pub use upstream::{assert_generated_roundtrip, generated_abc, generated_random, generated_text};
 pub use vectors::Vector;
 
 /// Type of binary to execute

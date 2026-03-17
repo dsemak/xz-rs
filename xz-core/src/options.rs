@@ -9,7 +9,8 @@ use lzma_safe::{AloneEncoder, Decoder, Encoder, RawDecoder, RawEncoder, Stream};
 
 pub use lzma_safe::decoder::options::Flags;
 pub use lzma_safe::encoder::options::{
-    Compression, FilterConfig, FilterOptions, FilterType, IntegrityCheck, LzmaOptions,
+    BcjOptions, Compression, DeltaOptions, FilterConfig, FilterOptions, FilterType, IntegrityCheck,
+    LzmaOptions,
 };
 
 /// LZMA1 encoder tuning options exposed for `.lzma` (`LZMA_Alone`) usage.

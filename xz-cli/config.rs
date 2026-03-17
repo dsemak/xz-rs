@@ -49,6 +49,8 @@ pub struct CliConfig {
     pub level: Option<u32>,
     /// Number of threads to use
     pub threads: Option<usize>,
+    /// Memory limit for compression compatibility flags.
+    pub compression_memory_limit: Option<u64>,
     /// Memory limit for decompression
     pub memory_limit: Option<u64>,
     /// Use extreme compression
@@ -61,6 +63,8 @@ pub struct CliConfig {
     pub lzma1: Option<String>,
     /// Optional LZMA2 encoder options string (from `--lzma2[=OPTS]`)
     pub lzma2: Option<String>,
+    /// Optional filter chain string (from `--filters=CHAIN`)
+    pub filters: Option<String>,
     /// Machine-readable output
     pub robot: bool,
     /// Custom suffix for compressed files
@@ -69,6 +73,8 @@ pub struct CliConfig {
     pub single_stream: bool,
     /// Skip integrity check verification
     pub ignore_check: bool,
+    /// Disable automatic limit adjustment for upstream CLI compatibility
+    pub no_adjust: bool,
     /// Enable sparse output when decompressing to a regular file
     pub sparse: bool,
 }
@@ -85,16 +91,19 @@ impl Default for CliConfig {
             no_warn: false,
             level: None,
             threads: None,
+            compression_memory_limit: None,
             memory_limit: None,
             extreme: false,
             format: DecodeMode::Auto,
             check: IntegrityCheck::Crc64,
             lzma1: None,
             lzma2: None,
+            filters: None,
             robot: false,
             suffix: None,
             single_stream: false,
             ignore_check: false,
+            no_adjust: false,
             sparse: true,
         }
     }
