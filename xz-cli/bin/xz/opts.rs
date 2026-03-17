@@ -112,6 +112,14 @@ pub struct XzOpts {
     #[arg(short = 'T', long = "threads", value_name = "NUM")]
     pub threads: Option<usize>,
 
+    /// Memory usage limit for compression
+    #[arg(
+        long = "memlimit-compress",
+        value_name = "LIMIT",
+        value_parser = parse_memory_limit
+    )]
+    pub memlimit_compress: Option<u64>,
+
     /// Memory usage limit for decompression
     #[arg(
         short = 'M',
@@ -121,6 +129,18 @@ pub struct XzOpts {
         value_parser = parse_memory_limit
     )]
     pub memory: Option<u64>,
+
+    /// Memory usage limit for decompression
+    #[arg(
+        long = "memlimit-decompress",
+        value_name = "LIMIT",
+        value_parser = parse_memory_limit
+    )]
+    pub memlimit_decompress: Option<u64>,
+
+    /// Disable automatic memory limit adjustment
+    #[arg(long = "no-adjust")]
+    pub no_adjust: bool,
 
     /// Use extreme compression (slower but better compression)
     #[arg(short = 'e', long = "extreme")]
@@ -147,6 +167,10 @@ pub struct XzOpts {
         conflicts_with = "lzma1"
     )]
     pub lzma2: Option<String>,
+
+    /// Explicit filter chain for `.xz` output
+    #[arg(long = "filters", value_name = "CHAIN", conflicts_with_all = ["lzma1", "lzma2"])]
+    pub filters: Option<String>,
 
     /// Read filenames from file (one per line)
     #[arg(
@@ -275,6 +299,8 @@ impl XzOpts {
     /// Build CLI configuration from the parsed options
     pub fn config(&self) -> Result<CliConfig, Box<dyn std::error::Error>> {
         let format = self.file_format()?;
+        let memory_limit = self.memlimit_decompress.or(self.memory);
+        let compression_memory_limit = self.memlimit_compress.or(self.memory);
         Ok(CliConfig {
             mode: self.operation_mode(),
             force: self.force,
@@ -285,16 +311,19 @@ impl XzOpts {
             no_warn: self.no_warn,
             level: self.compression_level().map(u32::from),
             threads: self.threads,
-            memory_limit: self.memory,
+            compression_memory_limit,
+            memory_limit,
             extreme: self.extreme,
             format,
             check: self.check_type_for_format(format)?,
             lzma1: self.lzma1.clone(),
             lzma2: self.lzma2.clone(),
+            filters: self.filters.clone(),
             robot: self.robot,
             suffix: self.suffix.clone(),
             single_stream: self.single_stream,
             ignore_check: self.ignore_check,
+            no_adjust: self.no_adjust,
             sparse: !self.no_sparse,
         })
     }
@@ -329,12 +358,16 @@ mod tests {
             level_8: false,
             level_9: false,
             threads: None,
+            memlimit_compress: None,
             memory: None,
+            memlimit_decompress: None,
+            no_adjust: false,
             extreme: false,
             format: None,
             check: None,
             lzma1: None,
             lzma2: None,
+            filters: None,
             files_from_file: None,
             files0_from_file: None,
             robot: false,
@@ -407,6 +440,58 @@ mod tests {
         assert!(opts.stdout);
         assert_eq!(opts.memory, Some(1024 * 1024));
         assert_eq!(opts.files, ["file.xz"]);
+    }
+
+    #[test]
+    fn parse_accepts_upstream_memlimit_flags() {
+        let opts = XzOpts::try_parse_from([
+            "xz",
+            "--memlimit-compress=48MiB",
+            "--memlimit-decompress=5MiB",
+            "--no-adjust",
+            "--threads=1",
+            "file.txt",
+        ])
+        .unwrap_or_else(|e| panic!("failed to parse upstream memlimit flags: {e}"));
+
+        assert_eq!(opts.memlimit_compress, Some(48 * 1024 * 1024));
+        assert_eq!(opts.memlimit_decompress, Some(5 * 1024 * 1024));
+        assert!(opts.no_adjust);
+        assert_eq!(opts.threads, Some(1));
+
+        let config = opts
+            .config()
+            .unwrap_or_else(|e| panic!("failed to build config: {e}"));
+        assert_eq!(config.compression_memory_limit, Some(48 * 1024 * 1024));
+        assert_eq!(config.memory_limit, Some(5 * 1024 * 1024));
+        assert!(config.no_adjust);
+    }
+
+    #[test]
+    fn parse_accepts_filters_chain() {
+        let opts = XzOpts::try_parse_from([
+            "xz",
+            "--filters=delta:dist=4 lzma2:dict=64KiB,nice=32,mode=fast",
+            "file.txt",
+        ])
+        .unwrap_or_else(|e| panic!("failed to parse --filters: {e}"));
+
+        assert_eq!(
+            opts.filters.as_deref(),
+            Some("delta:dist=4 lzma2:dict=64KiB,nice=32,mode=fast")
+        );
+    }
+
+    #[test]
+    fn generic_memlimit_populates_compress_and_decompress_limits() {
+        let opts = XzOpts::try_parse_from(["xz", "--memlimit", "1MiB", "file.txt"])
+            .unwrap_or_else(|e| panic!("failed to parse --memlimit: {e}"));
+
+        let config = opts
+            .config()
+            .unwrap_or_else(|e| panic!("failed to build config: {e}"));
+        assert_eq!(config.compression_memory_limit, Some(1024 * 1024));
+        assert_eq!(config.memory_limit, Some(1024 * 1024));
     }
 
     /// Test `--lzma2[=OPTS]` is accepted and stored in CLI config.

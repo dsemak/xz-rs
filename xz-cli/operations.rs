@@ -8,8 +8,8 @@ use xz_core::{
     file_info,
     options::lzma1::Lzma1Options,
     options::{
-        Compression, CompressionOptions, DecompressionOptions, FilterConfig, FilterOptions,
-        FilterType, Flags, LzmaOptions,
+        BcjOptions, Compression, CompressionOptions, DecompressionOptions, DeltaOptions,
+        FilterConfig, FilterOptions, FilterType, Flags, LzmaOptions,
     },
     pipeline::{compress, decompress},
     ratio, Error as CoreError, UnknownInputPolicy,
@@ -104,6 +104,166 @@ fn build_lzma1_options(raw_lzma1: &str, compression_level: Compression) -> Resul
     Ok(lzma1)
 }
 
+fn parse_bcj_options(
+    filter_name: &str,
+    raw_options: Option<&str>,
+) -> Result<Option<FilterOptions>> {
+    let Some(raw_options) = raw_options else {
+        return Ok(None);
+    };
+    if raw_options.is_empty() {
+        return Ok(Some(FilterOptions::Bcj(BcjOptions::default())));
+    }
+
+    let mut start_offset = None;
+    for part in raw_options.split(',') {
+        let (key, value) = part.split_once('=').ok_or_else(|| {
+            DiagnosticCause::from(Error::InvalidOption {
+                message: format!("invalid {filter_name} filter option: {part}"),
+            })
+        })?;
+
+        match key {
+            "start" => {
+                let parsed = value.parse::<u32>().map_err(|_| {
+                    DiagnosticCause::from(Error::InvalidOption {
+                        message: format!("invalid {filter_name} start offset: {value}"),
+                    })
+                })?;
+                start_offset = Some(parsed);
+            }
+            _ => {
+                return Err(DiagnosticCause::from(Error::InvalidOption {
+                    message: format!("unsupported {filter_name} filter option: {key}"),
+                }));
+            }
+        }
+    }
+
+    Ok(Some(FilterOptions::Bcj(BcjOptions {
+        start_offset: start_offset.unwrap_or(0),
+    })))
+}
+
+fn parse_delta_options(raw_options: Option<&str>) -> Result<Option<FilterOptions>> {
+    let Some(raw_options) = raw_options else {
+        return Ok(Some(FilterOptions::Delta(DeltaOptions::default())));
+    };
+    if raw_options.is_empty() {
+        return Ok(Some(FilterOptions::Delta(DeltaOptions::default())));
+    }
+
+    let mut distance = None;
+    for part in raw_options.split(',') {
+        let (key, value) = part.split_once('=').ok_or_else(|| {
+            DiagnosticCause::from(Error::InvalidOption {
+                message: format!("invalid delta filter option: {part}"),
+            })
+        })?;
+
+        match key {
+            "dist" => {
+                let parsed = value.parse::<u32>().map_err(|_| {
+                    DiagnosticCause::from(Error::InvalidOption {
+                        message: format!("invalid delta distance: {value}"),
+                    })
+                })?;
+                if !(1..=256).contains(&parsed) {
+                    return Err(DiagnosticCause::from(Error::InvalidOption {
+                        message: format!("delta distance out of range: {parsed}"),
+                    }));
+                }
+                distance = Some(parsed);
+            }
+            _ => {
+                return Err(DiagnosticCause::from(Error::InvalidOption {
+                    message: format!("unsupported delta filter option: {key}"),
+                }));
+            }
+        }
+    }
+
+    Ok(Some(FilterOptions::Delta(DeltaOptions {
+        distance: distance.unwrap_or(1),
+    })))
+}
+
+fn parse_filters_chain(
+    raw_filters: &str,
+    compression_level: Compression,
+) -> Result<Vec<FilterConfig>> {
+    let mut filters = Vec::new();
+
+    for raw_filter in raw_filters.split_whitespace() {
+        let (name, raw_options) = match raw_filter.split_once(':') {
+            Some((name, raw_options)) => (name, Some(raw_options)),
+            None => (raw_filter, None),
+        };
+
+        let filter = match name {
+            "lzma2" => {
+                let lzma1 =
+                    build_lzma1_options(raw_options.unwrap_or_default(), compression_level)?;
+                FilterConfig {
+                    filter_type: FilterType::Lzma2,
+                    options: Some(FilterOptions::Lzma(LzmaOptions::from(&lzma1))),
+                }
+            }
+            "x86" => FilterConfig {
+                filter_type: FilterType::X86,
+                options: parse_bcj_options("x86", raw_options)?,
+            },
+            "powerpc" => FilterConfig {
+                filter_type: FilterType::PowerPc,
+                options: parse_bcj_options("powerpc", raw_options)?,
+            },
+            "ia64" => FilterConfig {
+                filter_type: FilterType::Ia64,
+                options: parse_bcj_options("ia64", raw_options)?,
+            },
+            "arm" => FilterConfig {
+                filter_type: FilterType::Arm,
+                options: parse_bcj_options("arm", raw_options)?,
+            },
+            "armthumb" => FilterConfig {
+                filter_type: FilterType::ArmThumb,
+                options: parse_bcj_options("armthumb", raw_options)?,
+            },
+            "arm64" => FilterConfig {
+                filter_type: FilterType::Arm64,
+                options: parse_bcj_options("arm64", raw_options)?,
+            },
+            "sparc" => FilterConfig {
+                filter_type: FilterType::Sparc,
+                options: parse_bcj_options("sparc", raw_options)?,
+            },
+            "riscv" => FilterConfig {
+                filter_type: FilterType::RiscV,
+                options: parse_bcj_options("riscv", raw_options)?,
+            },
+            "delta" => FilterConfig {
+                filter_type: FilterType::Delta,
+                options: parse_delta_options(raw_options)?,
+            },
+            _ => {
+                return Err(DiagnosticCause::from(Error::InvalidOption {
+                    message: format!("unsupported filter in --filters: {name}"),
+                }));
+            }
+        };
+
+        filters.push(filter);
+    }
+
+    if filters.is_empty() {
+        return Err(DiagnosticCause::from(Error::InvalidOption {
+            message: "--filters requires at least one filter".into(),
+        }));
+    }
+
+    Ok(filters)
+}
+
 /// Apply `--lzma1` overrides to compression options when encoding `.lzma` or raw streams.
 fn apply_lzma1_overrides(
     mut options: CompressionOptions,
@@ -150,6 +310,28 @@ fn apply_lzma2_overrides(
         options: Some(FilterOptions::Lzma(lzma2)),
     }];
 
+    options = options.with_filters(filters);
+    Ok(options)
+}
+
+/// Apply `--filters` explicit filter-chain overrides to `.xz` compression options.
+fn apply_filters_override(
+    mut options: CompressionOptions,
+    config: &CliConfig,
+    encode_format: EncodeFormat,
+    compression_level: Compression,
+) -> Result<CompressionOptions> {
+    let Some(raw_filters) = config.filters.as_deref() else {
+        return Ok(options);
+    };
+
+    if encode_format != EncodeFormat::Xz {
+        return Err(DiagnosticCause::from(Error::InvalidOption {
+            message: "--filters is only supported with .xz output".into(),
+        }));
+    }
+
+    let filters = parse_filters_chain(raw_filters, compression_level)?;
     options = options.with_filters(filters);
     Ok(options)
 }
@@ -233,6 +415,7 @@ pub fn compress_file(
         .with_level(compression_level);
     let options = apply_lzma1_overrides(options, config, encode_format, compression_level)?;
     let options = apply_lzma2_overrides(options, config, encode_format, compression_level)?;
+    let options = apply_filters_override(options, config, encode_format, compression_level)?;
     let options = apply_threads_for_compression(options, config, encode_format)?;
 
     // Perform compression and handle errors

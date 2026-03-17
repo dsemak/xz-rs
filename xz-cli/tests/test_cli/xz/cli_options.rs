@@ -1,5 +1,8 @@
 use crate::add_test;
-use crate::common::{generate_random_data, BinaryType, Fixture};
+use crate::common::{
+    assert_generated_roundtrip, generate_random_data, generated_abc, generated_random,
+    generated_text, BinaryType, Fixture,
+};
 use crate::{KB, MB};
 
 // Test all compression levels (0-9)
@@ -78,6 +81,21 @@ add_test!(memory_limit_option, async {
     assert!(output.status.success());
 
     fixture.assert_files(&[FILE_NAME], &[&data]);
+});
+
+add_test!(upstream_generated_abc_roundtrip, async {
+    let data = generated_abc();
+    assert_generated_roundtrip("compress_generated_abc", &data).await;
+});
+
+add_test!(upstream_generated_random_roundtrip, async {
+    let data = generated_random();
+    assert_generated_roundtrip("compress_generated_random", &data).await;
+});
+
+add_test!(upstream_generated_text_roundtrip, async {
+    let data = generated_text();
+    assert_generated_roundtrip("compress_generated_text", &data).await;
 });
 
 // `--lzma1` is only meaningful with `--format=lzma`, but it should be accepted and work.
