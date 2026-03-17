@@ -69,6 +69,11 @@ xz-core = { path = "../xz-core" }
 
 [dev-dependencies]
 which = "4.4"
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "cli_vs_upstream"
+harness = false
 
 [[test]]
 name = "test_cli"
