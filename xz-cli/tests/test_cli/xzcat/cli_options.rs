@@ -115,6 +115,23 @@ add_test!(different_compression_levels, async {
     }
 });
 
+// `xzcat -T4` should still decode normal `.xz` inputs in auto mode.
+add_test!(threaded_auto_decompression_does_not_fail, async {
+    const FILE_NAME: &str = "threaded_auto_decode.txt";
+    let data = generate_random_data(KB);
+    let mut fixture = Fixture::with_file(FILE_NAME, &data);
+
+    let file_path = fixture.path(FILE_NAME);
+    let compressed_path = fixture.compressed_path(FILE_NAME);
+
+    let output = fixture.run_cargo("xz", &[&file_path]).await;
+    assert!(output.status.success());
+
+    let output = fixture.run_cargo("xzcat", &["-T4", &compressed_path]).await;
+    assert!(output.status.success());
+    assert_eq!(output.stdout_raw, data);
+});
+
 // Test xzcat processes files in order
 add_test!(file_order, async {
     const FILES: [&str; 3] = ["a.txt", "b.txt", "c.txt"];

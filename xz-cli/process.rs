@@ -175,7 +175,7 @@ pub fn process_file(input_path: &str, config: &CliConfig) -> Result<()> {
 
             if config.verbose || config.robot {
                 if config.robot {
-                    println!("OK {input_path}");
+                    eprintln!("OK {input_path}");
                 } else {
                     eprintln!("Test successful: {input_path}");
                 }
