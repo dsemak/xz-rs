@@ -185,15 +185,18 @@ fn bench_compress_alias(c: &mut Criterion, binary_name: &str, format: CodecForma
                 let bench_case = case_label(dataset, size, level);
 
                 for target in &targets {
-                    register_compress_case(&mut group, CompressCase {
-                        binary_name,
-                        format,
-                        target,
-                        dataset,
-                        level,
-                        bench_case: &bench_case,
-                        data: &data,
-                    });
+                    register_compress_case(
+                        &mut group,
+                        CompressCase {
+                            binary_name,
+                            format,
+                            target,
+                            dataset,
+                            level,
+                            bench_case: &bench_case,
+                            data: &data,
+                        },
+                    );
                 }
             }
         }
@@ -218,16 +221,19 @@ fn bench_decode_file_alias(c: &mut Criterion, binary_name: &str, format: CodecFo
                 let bench_case = case_label(dataset, size, level);
 
                 for target in &targets {
-                    register_decode_file_case(&mut group, DecodeCase {
-                        binary_name,
-                        format,
-                        target,
-                        dataset,
-                        level,
-                        bench_case: &bench_case,
-                        data: &data,
-                        compressor_path: &compressor_path,
-                    });
+                    register_decode_file_case(
+                        &mut group,
+                        DecodeCase {
+                            binary_name,
+                            format,
+                            target,
+                            dataset,
+                            level,
+                            bench_case: &bench_case,
+                            data: &data,
+                            compressor_path: &compressor_path,
+                        },
+                    );
                 }
             }
         }
@@ -252,16 +258,19 @@ fn bench_decode_stdout_alias(c: &mut Criterion, binary_name: &str, format: Codec
                 let bench_case = case_label(dataset, size, level);
 
                 for target in &targets {
-                    register_decode_stdout_case(&mut group, DecodeCase {
-                        binary_name,
-                        format,
-                        target,
-                        dataset,
-                        level,
-                        bench_case: &bench_case,
-                        data: &data,
-                        compressor_path: &compressor_path,
-                    });
+                    register_decode_stdout_case(
+                        &mut group,
+                        DecodeCase {
+                            binary_name,
+                            format,
+                            target,
+                            dataset,
+                            level,
+                            bench_case: &bench_case,
+                            data: &data,
+                            compressor_path: &compressor_path,
+                        },
+                    );
                 }
             }
         }
