@@ -93,6 +93,15 @@ impl Index {
         Ok(index)
     }
 
+    /// Encode this [`Index`] into the raw XZ Index field bytes stored in a Stream.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if liblzma fails to encode the current index.
+    pub fn encode_xz_index_field(&self) -> Result<Vec<u8>> {
+        ffi::encode_xz_index_field(self)
+    }
+
     /// Set Stream Flags for the last (and typically the only) Stream in this index.
     ///
     /// This is needed for functions like `checks()` to report meaningful values and for
@@ -623,6 +632,29 @@ mod tests {
 
         let checks = index.checks();
         assert_ne!(checks, 0, "Checks should not be zero");
+    }
+
+    /// Test `Index` can round-trip through raw XZ Index field bytes.
+    #[test]
+    fn index_xz_index_field_roundtrip() {
+        let test_data = b"Lazzy dog jumps over the lazy fox".repeat(100);
+        let compressed = compress_to_xz_stream(&test_data).unwrap();
+        let decoder = create_test_decoder_from_compressed(&compressed).unwrap();
+        let index = decoder.index().unwrap();
+
+        let encoded = index.encode_xz_index_field().unwrap();
+        let mut decoded = Index::decode_xz_index_field(&encoded, u64::MAX).unwrap();
+        let footer = compressed[compressed.len() - crate::stream::HEADER_SIZE..]
+            .try_into()
+            .unwrap();
+        decoded.set_stream_flags_from_footer(&footer).unwrap();
+
+        assert_eq!(decoded.stream_count(), index.stream_count());
+        assert_eq!(decoded.block_count(), index.block_count());
+        assert_eq!(decoded.file_size(), index.file_size());
+        assert_eq!(decoded.uncompressed_size(), index.uncompressed_size());
+        assert_eq!(decoded.stream_size(), index.stream_size());
+        assert_eq!(decoded.checks(), index.checks());
     }
 
     /// Test `IndexIterator` with Stream mode using Iterator trait.
