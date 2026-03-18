@@ -28,8 +28,8 @@ pub struct ParsedArgs {
 pub fn parse_args(args: &[OsString]) -> ParsedArgs {
     let cmp_program = env::var_os("CMP").unwrap_or_else(|| OsString::from("cmp"));
 
-    let mut cmp_args: Vec<OsString> = Vec::new();
-    let mut operands: Vec<PathBuf> = Vec::new();
+    let mut cmp_args = Vec::new();
+    let mut operands = Vec::new();
     let mut show_help = false;
     let mut show_version = false;
 

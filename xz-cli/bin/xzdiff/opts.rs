@@ -28,8 +28,8 @@ pub struct ParsedArgs {
 pub fn parse_args(args: &[OsString]) -> ParsedArgs {
     let diff_program = env::var_os("DIFF").unwrap_or_else(|| OsString::from("diff"));
 
-    let mut diff_args: Vec<OsString> = Vec::new();
-    let mut operands: Vec<PathBuf> = Vec::new();
+    let mut diff_args = Vec::new();
+    let mut operands = Vec::new();
     let mut show_help = false;
     let mut show_version = false;
 

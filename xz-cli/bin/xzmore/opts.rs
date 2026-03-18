@@ -26,8 +26,8 @@ pub struct ParsedArgs {
 pub fn parse_args(args: &[OsString]) -> ParsedArgs {
     let pager_program = env::var_os("PAGER").unwrap_or_else(|| OsString::from("more"));
 
-    let mut pager_args: Vec<OsString> = Vec::new();
-    let mut files: Vec<PathBuf> = Vec::new();
+    let mut pager_args = Vec::new();
+    let mut files = Vec::new();
     let mut show_help = false;
     let mut show_version = false;
 
