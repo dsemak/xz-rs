@@ -57,7 +57,7 @@ fn build_mixed_dataset(size: usize) -> Vec<u8> {
         let remaining = size - data.len();
         let chunk_len = remaining.min(BLOCK_LEN);
 
-        if block_index % 3 == 0 {
+        if block_index.is_multiple_of(3) {
             let random_block = build_random_bytes(chunk_len, seed);
             data.extend_from_slice(&random_block);
             seed ^= 0xD134_2543_DE82_EF95;
