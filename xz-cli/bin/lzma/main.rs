@@ -17,8 +17,9 @@ const PROGRAM_NAME: &str = "lzma";
 fn main() {
     let opts = LzmaOpts::parse();
     let config = opts.config();
+    let files = opts.files();
 
-    let report = run_cli(&opts.files, &config, PROGRAM_NAME);
+    let report = run_cli(&files, &config, PROGRAM_NAME);
     for diagnostic in &report.diagnostics {
         if let Some(msg) = format_diagnostic_for_stderr(config.quiet, diagnostic) {
             eprintln!("{msg}");

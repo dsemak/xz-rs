@@ -7,6 +7,9 @@ use crate::add_test;
 use crate::common::{generate_random_data, BinaryType, Fixture};
 use crate::MB;
 
+#[cfg(unix)]
+use std::os::unix::ffi::{OsStrExt, OsStringExt};
+
 // Test empty file handling
 add_test!(empty_file, async {
     const FILE_NAME: &str = "empty.txt";
@@ -288,6 +291,39 @@ add_test!(list_rejects_no_files_stdin, async {
         .await;
     assert!(!output.status.success());
     assert!(output.stderr.contains("not support"));
+});
+
+// Test that `xz --files0` accepts non-UTF8 paths.
+#[cfg(unix)]
+add_test!(files0_accepts_non_utf8_paths, async {
+    use std::ffi::OsString;
+    use std::path::PathBuf;
+
+    let mut fixture = Fixture::with_file("placeholder.txt", b"placeholder");
+    fixture.remove_file("placeholder.txt");
+
+    let mut input_bytes = fixture.root_dir_path().as_os_str().as_bytes().to_vec();
+    input_bytes.push(b'/');
+    input_bytes.extend_from_slice(b"bad-\xFF-name.txt");
+    let input_path = PathBuf::from(OsString::from_vec(input_bytes.clone()));
+    std::fs::write(&input_path, b"non-utf8-path-data").unwrap();
+
+    let mut stdin = input_bytes;
+    stdin.push(0);
+
+    let output = fixture
+        .run_with_stdin_raw(BinaryType::cargo("xz"), &["--files0=-", "-k"], &stdin)
+        .await;
+    assert!(
+        output.status.success(),
+        "xz --files0 failed: {}",
+        output.stderr
+    );
+
+    let mut compressed_bytes = input_path.as_os_str().as_bytes().to_vec();
+    compressed_bytes.extend_from_slice(b".xz");
+    let compressed_path = PathBuf::from(OsString::from_vec(compressed_bytes));
+    assert!(compressed_path.exists(), "compressed file was not created");
 });
 
 // Test upstream-like exit codes and continued processing across multiple files:

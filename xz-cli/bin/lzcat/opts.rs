@@ -1,6 +1,7 @@
 //! Command line argument parsing for the lzcat utility.
 
 use clap::Parser;
+use std::path::PathBuf;
 
 use xz_cli::{parse_memory_limit, CliConfig, OperationMode};
 
@@ -84,8 +85,8 @@ impl LzCatOpts {
     }
 
     /// Files supplied on the command line.
-    pub fn files(&self) -> &[String] {
-        &self.files
+    pub fn files(&self) -> Vec<PathBuf> {
+        self.files.iter().map(PathBuf::from).collect()
     }
 }
 
@@ -119,7 +120,7 @@ mod tests {
             Err(e) => panic!("failed to parse aliases: {e}"),
         };
 
-        assert_eq!(opts.files(), ["input.lzma"]);
+        assert_eq!(opts.files(), [PathBuf::from("input.lzma")]);
         assert_eq!(opts.memory, Some(1024 * 1024));
     }
 }

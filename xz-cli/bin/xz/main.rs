@@ -3,6 +3,7 @@
 //! A modern Rust implementation of the xz compression utility, compatible with
 //! the original xz but with improved performance and user experience.
 
+use std::path::PathBuf;
 use std::process;
 
 mod opts;
@@ -53,7 +54,7 @@ fn main() {
     }
 }
 
-fn resolve_input_files(opts: &XzOpts) -> Result<Vec<String>> {
+fn resolve_input_files(opts: &XzOpts) -> Result<Vec<PathBuf>> {
     let mut files = opts.files.clone();
 
     if let Some(path) = opts.files_from_file.as_deref() {
