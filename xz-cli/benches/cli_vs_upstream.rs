@@ -1,6 +1,7 @@
 mod common;
 
 use std::fs;
+use std::path::Path;
 use std::process::Command;
 
 use common::{
@@ -34,16 +35,38 @@ fn prepare_group<'a>(c: &'a mut Criterion, name: String) -> BenchmarkGroup<'a, W
     c.benchmark_group(name)
 }
 
-fn register_compress_case(
-    group: &mut BenchmarkGroup<'_, WallTime>,
-    binary_name: &str,
+struct CompressCase<'a> {
+    binary_name: &'a str,
     format: CodecFormat,
-    target: &common::targets::BenchmarkTarget,
+    target: &'a common::targets::BenchmarkTarget,
     dataset: DatasetKind,
     level: u32,
-    bench_case: &str,
-    data: &[u8],
-) {
+    bench_case: &'a str,
+    data: &'a [u8],
+}
+
+struct DecodeCase<'a> {
+    binary_name: &'a str,
+    format: CodecFormat,
+    target: &'a common::targets::BenchmarkTarget,
+    dataset: DatasetKind,
+    level: u32,
+    bench_case: &'a str,
+    data: &'a [u8],
+    compressor_path: &'a Path,
+}
+
+fn register_compress_case(group: &mut BenchmarkGroup<'_, WallTime>, case: CompressCase<'_>) {
+    let CompressCase {
+        binary_name,
+        format,
+        target,
+        dataset,
+        level,
+        bench_case,
+        data,
+    } = case;
+
     group.bench_with_input(
         BenchmarkId::new(target.label, bench_case),
         data,
@@ -71,17 +94,18 @@ fn register_compress_case(
     );
 }
 
-fn register_decode_file_case(
-    group: &mut BenchmarkGroup<'_, WallTime>,
-    binary_name: &str,
-    format: CodecFormat,
-    target: &common::targets::BenchmarkTarget,
-    dataset: DatasetKind,
-    level: u32,
-    bench_case: &str,
-    data: &[u8],
-    compressor_path: &std::path::Path,
-) {
+fn register_decode_file_case(group: &mut BenchmarkGroup<'_, WallTime>, case: DecodeCase<'_>) {
+    let DecodeCase {
+        binary_name,
+        format,
+        target,
+        dataset,
+        level,
+        bench_case,
+        data,
+        compressor_path,
+    } = case;
+
     group.bench_with_input(
         BenchmarkId::new(target.label, bench_case),
         data,
@@ -104,17 +128,18 @@ fn register_decode_file_case(
     );
 }
 
-fn register_decode_stdout_case(
-    group: &mut BenchmarkGroup<'_, WallTime>,
-    binary_name: &str,
-    format: CodecFormat,
-    target: &common::targets::BenchmarkTarget,
-    dataset: DatasetKind,
-    level: u32,
-    bench_case: &str,
-    data: &[u8],
-    compressor_path: &std::path::Path,
-) {
+fn register_decode_stdout_case(group: &mut BenchmarkGroup<'_, WallTime>, case: DecodeCase<'_>) {
+    let DecodeCase {
+        binary_name,
+        format,
+        target,
+        dataset,
+        level,
+        bench_case,
+        data,
+        compressor_path,
+    } = case;
+
     group.bench_with_input(
         BenchmarkId::new(target.label, bench_case),
         data,
@@ -162,13 +187,15 @@ fn bench_compress_alias(c: &mut Criterion, binary_name: &str, format: CodecForma
                 for target in &targets {
                     register_compress_case(
                         &mut group,
-                        binary_name,
-                        format,
-                        target,
-                        dataset,
-                        level,
-                        &bench_case,
-                        &data,
+                        CompressCase {
+                            binary_name,
+                            format,
+                            target,
+                            dataset,
+                            level,
+                            bench_case: &bench_case,
+                            data: &data,
+                        },
                     );
                 }
             }
@@ -196,14 +223,16 @@ fn bench_decode_file_alias(c: &mut Criterion, binary_name: &str, format: CodecFo
                 for target in &targets {
                     register_decode_file_case(
                         &mut group,
-                        binary_name,
-                        format,
-                        target,
-                        dataset,
-                        level,
-                        &bench_case,
-                        &data,
-                        &compressor_path,
+                        DecodeCase {
+                            binary_name,
+                            format,
+                            target,
+                            dataset,
+                            level,
+                            bench_case: &bench_case,
+                            data: &data,
+                            compressor_path: &compressor_path,
+                        },
                     );
                 }
             }
@@ -231,14 +260,16 @@ fn bench_decode_stdout_alias(c: &mut Criterion, binary_name: &str, format: Codec
                 for target in &targets {
                     register_decode_stdout_case(
                         &mut group,
-                        binary_name,
-                        format,
-                        target,
-                        dataset,
-                        level,
-                        &bench_case,
-                        &data,
-                        &compressor_path,
+                        DecodeCase {
+                            binary_name,
+                            format,
+                            target,
+                            dataset,
+                            level,
+                            bench_case: &bench_case,
+                            data: &data,
+                            compressor_path: &compressor_path,
+                        },
                     );
                 }
             }

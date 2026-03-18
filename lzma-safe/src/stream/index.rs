@@ -129,6 +129,10 @@ impl Index {
     /// to invalid index state or memory allocation failure). On error, `other`
     /// remains unchanged and will be dropped normally.
     pub fn append(&mut self, other: Index) -> Result<()> {
+        if !allocators_are_compatible(self.allocator.as_ref(), other.allocator.as_ref()) {
+            return Err(Error::ProgError);
+        }
+
         // Take a local clone to avoid borrowing `self` immutably while it is mutably borrowed.
         let allocator = self.allocator.clone();
         let mut other = ManuallyDrop::new(other);
@@ -163,6 +167,15 @@ impl Index {
     /// Create an iterator over non-empty blocks only.
     pub fn iter_non_empty_blocks(&self) -> IndexIterator<'_> {
         IndexIterator::with_mode(self, IndexIterMode::NonEmptyBlock)
+    }
+}
+
+/// Check if two allocators are compatible.
+fn allocators_are_compatible(left: Option<&LzmaAllocator>, right: Option<&LzmaAllocator>) -> bool {
+    match (left, right) {
+        (Some(left), Some(right)) => left.is_compatible_with(right),
+        (None, None) => true,
+        _ => false,
     }
 }
 
@@ -512,10 +525,34 @@ pub struct BlockInfo {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use crate::encoder::options::{Compression, IntegrityCheck};
-    use crate::{Action, Stream};
+    use crate::stream::Allocator;
+    use crate::{Action, Error, Stream};
 
     use super::*;
+
+    /// Dummy allocator for testing.
+    #[derive(Default)]
+    struct DummyAllocator;
+
+    impl Allocator for DummyAllocator {
+        /// Allocate a block of memory for `nmemb` elements of `size` bytes each.
+        fn alloc(&self, nmemb: usize, size: usize) -> *mut std::ffi::c_void {
+            match nmemb.checked_mul(size) {
+                Some(total) if total > 0 => unsafe { libc::malloc(total) },
+                _ => std::ptr::null_mut(),
+            }
+        }
+
+        /// Free a previously allocated memory block.
+        unsafe fn free(&self, ptr: *mut std::ffi::c_void) {
+            if !ptr.is_null() {
+                libc::free(ptr);
+            }
+        }
+    }
 
     /// Helper function to create a `FileInfoDecoder` from already compressed `.xz` data.
     fn create_test_decoder_from_compressed(compressed: &[u8]) -> Option<crate::FileInfoDecoder> {
@@ -594,6 +631,24 @@ mod tests {
     fn create_test_decoder(data: &[u8]) -> Option<crate::FileInfoDecoder> {
         let compressed = compress_to_xz_stream(data)?;
         create_test_decoder_from_compressed(&compressed)
+    }
+
+    /// Test that `Index::append()` rejects indexes from incompatible allocators.
+    #[test]
+    fn append_rejects_indexes_from_incompatible_allocators() {
+        let left_allocator = Arc::new(DummyAllocator);
+        let right_allocator = Arc::new(DummyAllocator);
+        let left_context = LzmaAllocator::from_allocator(left_allocator);
+        let right_context = LzmaAllocator::from_allocator(right_allocator);
+
+        let left_raw = unsafe { liblzma_sys::lzma_index_init(left_context.as_ptr()) };
+        let right_raw = unsafe { liblzma_sys::lzma_index_init(right_context.as_ptr()) };
+
+        let mut left = unsafe { Index::from_raw(left_raw, Some(left_context)) }.unwrap();
+        let right = unsafe { Index::from_raw(right_raw, Some(right_context)) }.unwrap();
+
+        let result = left.append(right);
+        assert_eq!(result, Err(Error::ProgError));
     }
 
     /// Test basic Index creation and accessors.

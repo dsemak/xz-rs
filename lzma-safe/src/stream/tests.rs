@@ -90,6 +90,21 @@ fn stream_with_allocator_creation() {
     assert!(!stream_with_alloc.inner.allocator.is_null());
 }
 
+/// Test allocator callback table pointer remains valid after moving the stream.
+#[test]
+fn allocator_pointer_stays_stable_after_stream_move() {
+    let allocator = std::sync::Arc::new(DummyAllocator);
+    let original = Stream::with_allocator(Some(allocator));
+    let expected_ptr = original.allocator.as_ref().unwrap().as_ptr();
+    assert_eq!(original.inner.allocator, expected_ptr);
+
+    let moved = (original,);
+    let stream = moved.0;
+    let actual_ptr = stream.allocator.as_ref().unwrap().as_ptr();
+
+    assert_eq!(stream.inner.allocator, actual_ptr);
+}
+
 /// Test buffer state management during processing.
 #[test]
 fn buffer_state_management() {

@@ -42,20 +42,23 @@ impl Allocator for StdAllocator {
 /// RAII wrapper for a liblzma-compatible allocator.
 pub struct LzmaAllocator {
     /// The C allocator structure passed to liblzma.
-    inner: liblzma_sys::lzma_allocator,
-    /// Keep the allocator alive. None for default allocator.
-    allocator_box: Option<Box<Arc<dyn Allocator>>>,
+    inner: Box<liblzma_sys::lzma_allocator>,
+    /// Shared Rust allocator used for compatibility checks.
+    allocator: Option<Arc<dyn Allocator>>,
+    /// Stable storage for the allocator reference exposed through `opaque`.
+    _allocator_anchor: Option<Box<Arc<dyn Allocator>>>,
 }
 
 impl Default for LzmaAllocator {
     fn default() -> Self {
         Self {
-            inner: liblzma_sys::lzma_allocator {
+            inner: Box::new(liblzma_sys::lzma_allocator {
                 alloc: None, // Use liblzma's default malloc
                 free: None,  // Use liblzma's default free
                 opaque: std::ptr::null_mut(),
-            },
-            allocator_box: None,
+            }),
+            allocator: None,
+            _allocator_anchor: None,
         }
     }
 }
@@ -66,43 +69,52 @@ impl LzmaAllocator {
     /// The allocator will be boxed and kept alive for the lifetime of this wrapper.
     /// The returned structure can be passed to liblzma.
     pub fn from_allocator(allocator: Arc<dyn Allocator>) -> Self {
-        // Box the Arc to keep it alive and get a stable pointer
-        let boxed_allocator = Box::new(allocator);
+        // Box the Arc to keep it alive at a stable address for liblzma's opaque pointer.
+        let boxed_allocator = Box::new(Arc::clone(&allocator));
         let opaque_ptr =
             std::ptr::from_ref::<Arc<dyn Allocator>>(Box::as_ref(&boxed_allocator)) as *mut c_void;
 
         Self {
-            inner: liblzma_sys::lzma_allocator {
+            inner: Box::new(liblzma_sys::lzma_allocator {
                 alloc: Some(c_alloc_wrapper),
                 free: Some(c_free_wrapper),
                 opaque: opaque_ptr,
-            },
-            allocator_box: Some(boxed_allocator),
+            }),
+            allocator: Some(allocator),
+            _allocator_anchor: Some(boxed_allocator),
         }
     }
 
     /// Return a const pointer to the wrapped allocator.
     pub fn as_ptr(&self) -> *const liblzma_sys::lzma_allocator {
-        std::ptr::from_ref(&self.inner)
+        std::ptr::from_ref(self.inner.as_ref())
     }
 
     /// Return a mutable pointer to the wrapped allocator.
     pub fn as_mut_ptr(&mut self) -> *mut liblzma_sys::lzma_allocator {
-        std::ptr::from_mut(&mut self.inner)
+        std::ptr::from_mut(self.inner.as_mut())
+    }
+
+    /// Returns `true` when both wrappers refer to the same allocator context.
+    pub(crate) fn is_compatible_with(&self, other: &Self) -> bool {
+        match (&self.allocator, &other.allocator) {
+            (None, None) => true,
+            (Some(left), Some(right)) => Arc::ptr_eq(left, right),
+            _ => false,
+        }
     }
 }
 
 impl Clone for LzmaAllocator {
     fn clone(&self) -> Self {
-        match &self.allocator_box {
+        match &self.allocator {
             None => {
                 // Default allocator - just create a new one
                 Self::default()
             }
-            Some(boxed_arc) => {
+            Some(allocator) => {
                 // Clone the Arc to share the allocator
-                let allocator_arc = Arc::clone(boxed_arc.as_ref());
-                Self::from_allocator(allocator_arc)
+                Self::from_allocator(Arc::clone(allocator))
             }
         }
     }
@@ -110,7 +122,7 @@ impl Clone for LzmaAllocator {
 
 impl Drop for LzmaAllocator {
     fn drop(&mut self) {
-        // The Box<Arc<dyn Allocator>> will be dropped automatically,
+        // The boxed allocator anchor and shared Arc will be dropped automatically,
         // which is safe since we control the lifetime
     }
 }

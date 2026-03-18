@@ -20,6 +20,8 @@ pub struct FileInfoDecoder {
     file_size: u64,
     /// Allocator from the stream, kept for cleanup
     allocator: Option<LzmaAllocator>,
+    /// Total number of bytes consumed, preserved after finish.
+    total_in: u64,
 }
 
 impl FileInfoDecoder {
@@ -50,6 +52,7 @@ impl FileInfoDecoder {
             index: None,
             file_size,
             allocator,
+            total_in: 0,
         })
     }
 
@@ -93,30 +96,29 @@ impl FileInfoDecoder {
         let input_before = stream.avail_in();
 
         // Call lzma_code with proper mutable reference
-        let result = crate::ffi::lzma_code(&mut stream, action);
-        let bytes_read = input_before - stream.avail_in();
+        let mut result = crate::ffi::lzma_code(&mut stream, action);
+        let mut bytes_read = input_before - stream.avail_in();
 
-        // Handle special case for Action::Finish with empty input where liblzma
-        // may require an additional call to signal LZMA_STREAM_END properly.
-        let result =
-            if action == Action::Finish && result.is_ok() && input_before == 0 && bytes_read == 0 {
-                // For empty inputs liblzma may require one additional call before
-                // signalling `LZMA_STREAM_END`. Invoke it here so callers don't
-                // need to loop in trivial cases.
-                let second_result = crate::ffi::lzma_code(&mut stream, action);
-                let second_bytes_read = input_before - stream.avail_in();
+        if action == Action::Finish && bytes_read == 0 {
+            const MAX_RETRIES: usize = 2;
 
-                if (second_result.is_ok() || matches!(second_result, Err(crate::Error::BufError)))
-                    && second_bytes_read == 0
-                {
-                    // Force stream end when no progress is made on the second call
-                    Err(crate::Error::StreamEnd)
-                } else {
-                    second_result
+            for _ in 0..MAX_RETRIES {
+                if !matches!(result, Ok(()) | Err(crate::Error::BufError)) {
+                    break;
                 }
-            } else {
-                result
-            };
+
+                let before = stream.avail_in();
+                let next = crate::ffi::lzma_code(&mut stream, action);
+                let read_delta = before - stream.avail_in();
+                bytes_read += read_delta;
+
+                result = next;
+                if matches!(result, Err(crate::Error::StreamEnd)) || read_delta != 0 {
+                    break;
+                }
+            }
+        }
+        self.total_in = stream.total_in();
 
         match result {
             Ok(()) => {
@@ -177,7 +179,7 @@ impl FileInfoDecoder {
 
     /// Get the total number of input bytes processed.
     pub fn total_in(&self) -> u64 {
-        self.stream.as_ref().map_or(0, Stream::total_in)
+        self.stream.as_ref().map_or(self.total_in, Stream::total_in)
     }
 
     /// Get the size of the input file.
@@ -214,6 +216,33 @@ impl Drop for FileInfoDecoder {
 mod tests {
     use crate::{Action, Error, Stream};
 
+    fn drive_file_info_decoder(compressed: &[u8]) -> crate::FileInfoDecoder {
+        let mut decoder = Stream::default()
+            .file_info_decoder(u64::MAX, compressed.len() as u64)
+            .unwrap();
+        let mut pos = 0usize;
+        let mut action = Action::Run;
+
+        while !decoder.is_finished() {
+            match decoder.process(&compressed[pos..], action) {
+                Ok(bytes) => {
+                    pos += bytes;
+                    if pos >= compressed.len() {
+                        action = Action::Finish;
+                    }
+                }
+                Err(Error::SeekNeeded) => {
+                    pos = usize::try_from(decoder.seek_pos()).unwrap_or(compressed.len());
+                    decoder.clear_input();
+                    action = Action::Run;
+                }
+                Err(err) => panic!("file info decode failed: {err:?}"),
+            }
+        }
+
+        decoder
+    }
+
     /// Test [`FileInfoDecoder`] creation and basic API.
     #[test]
     fn file_info_decoder_creation() {
@@ -245,6 +274,17 @@ mod tests {
 
         // Should return an error for invalid data
         assert!(result.is_err());
+    }
+
+    /// Test truncated or invalid finish does not masquerade as success.
+    #[test]
+    fn file_info_decoder_invalid_finish_does_not_mark_finished() {
+        let mut decoder = Stream::default().file_info_decoder(u64::MAX, 16).unwrap();
+        let result = decoder.process(b"invalid metadata", Action::Finish);
+
+        assert!(result.is_err());
+        assert!(!decoder.is_finished());
+        assert!(decoder.index().is_none());
     }
 
     /// Test `FileInfoDecoder::process_after_finish` returns error.
@@ -359,6 +399,30 @@ mod tests {
 
         // Try to get the index (may or may not be available depending on how decoding went)
         let _ = file_info_decoder.index();
+    }
+
+    /// Test total input accounting remains available after a successful finish.
+    #[test]
+    fn file_info_decoder_preserves_total_in_after_finish() {
+        use crate::encoder::options::{Compression, IntegrityCheck};
+
+        let payload = b"metadata accounting";
+        let mut encoder = Stream::default()
+            .easy_encoder(Compression::Level3, IntegrityCheck::Crc64)
+            .unwrap();
+        let mut compressed = vec![0u8; 4096];
+        let (read, written) = encoder
+            .process(payload, &mut compressed, Action::Run)
+            .unwrap();
+        assert_eq!(read, payload.len());
+        let (_, finish_written) = encoder
+            .process(&[], &mut compressed[written..], Action::Finish)
+            .unwrap();
+        compressed.truncate(written + finish_written);
+
+        let decoder = drive_file_info_decoder(&compressed);
+        assert!(decoder.is_finished());
+        assert!(decoder.total_in() > 0);
     }
 
     /// Test `FileInfoDecoder` with stream that has zero blocks.
