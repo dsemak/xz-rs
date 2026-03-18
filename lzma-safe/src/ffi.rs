@@ -329,6 +329,30 @@ pub(crate) fn decode_xz_index_field(
     Ok((index, in_pos))
 }
 
+/// Encode an [`Index`] into the raw XZ Index field bytes stored in a Stream.
+pub(crate) fn encode_xz_index_field(index: &Index) -> Result<Vec<u8>> {
+    // SAFETY: `index.as_ptr()` is a valid liblzma index pointer for shared access.
+    let encoded_size = unsafe { liblzma_sys::lzma_index_size(index.as_ptr()) as usize };
+    let mut encoded = vec![0u8; encoded_size];
+    let mut out_pos = 0usize;
+
+    // SAFETY:
+    // - `index.as_ptr()` remains valid for the duration of the call.
+    // - `encoded.as_mut_ptr()` points to `encoded.len()` writable bytes.
+    // - `out_pos` is a valid out-pointer updated by liblzma on success.
+    let ret = unsafe {
+        liblzma_sys::lzma_index_buffer_encode(
+            index.as_ptr(),
+            encoded.as_mut_ptr(),
+            ptr::from_mut(&mut out_pos),
+            encoded.len(),
+        )
+    };
+    result_from_lzma_ret(ret, ())?;
+    encoded.truncate(out_pos);
+    Ok(encoded)
+}
+
 /// Set Stream Flags for the last Stream in an index.
 pub(crate) fn lzma_index_stream_flags(index: &mut Index, flags: &StreamFlags) -> Result<()> {
     let raw = flags.to_raw();
