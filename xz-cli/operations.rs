@@ -366,7 +366,7 @@ fn emit_compress_summary(config: &CliConfig, bytes_read: u64, bytes_written: u64
 
     let ratio = ratio(bytes_written, bytes_read);
     if config.robot {
-        println!("{bytes_read} {bytes_written} {ratio:.1}");
+        eprintln!("{bytes_read} {bytes_written} {ratio:.1}");
     } else {
         eprintln!("Compressed {bytes_read} bytes to {bytes_written} bytes ({ratio:.1}% ratio)");
     }
@@ -437,7 +437,7 @@ fn emit_decompress_summary(config: &CliConfig, bytes_read: u64, bytes_written: u
 
     let ratio = ratio(bytes_written, bytes_read);
     if config.robot {
-        println!("{bytes_read} {bytes_written} {ratio:.1}");
+        eprintln!("{bytes_read} {bytes_written} {ratio:.1}");
     } else {
         eprintln!(
             "Decompressed {bytes_read} bytes to {bytes_written} bytes ({ratio:.1}% expansion)"
@@ -470,6 +470,12 @@ fn apply_threads_for_decompression(
 
     let thread_count = u32::try_from(threads)
         .map_err(|_| DiagnosticCause::from(Error::InvalidThreadCount { count: threads }))?;
+    if config.format == xz_core::config::DecodeMode::Auto {
+        // Auto-detect mode cannot use liblzma's multi-threaded decoder. Ignore the
+        // CLI thread request here so common `xz -d -T4 file.xz` style invocations
+        // keep working instead of failing up front.
+        return Ok(options);
+    }
     options = options.with_threads(xz_core::Threading::Exact(thread_count));
     Ok(options)
 }
