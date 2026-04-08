@@ -1,6 +1,7 @@
 //! Command line argument parsing for the unxz utility.
 
 use clap::Parser;
+use std::path::PathBuf;
 
 use xz_cli::{parse_memory_limit, CliConfig, OperationMode};
 
@@ -111,8 +112,8 @@ impl UnxzOpts {
     }
 
     /// Files supplied on the command line
-    pub fn files(&self) -> &[String] {
-        &self.files
+    pub fn files(&self) -> Vec<PathBuf> {
+        self.files.iter().map(PathBuf::from).collect()
     }
 }
 
@@ -148,7 +149,7 @@ mod tests {
         let opts =
             UnxzOpts::try_parse_from(["unxz", "-cvk", "-T", "4", "-M", "1M", "file.xz"]).unwrap();
 
-        assert_eq!(opts.files(), ["file.xz"]);
+        assert_eq!(opts.files(), [PathBuf::from("file.xz")]);
         assert!(opts.stdout);
         assert!(opts.keep);
         assert!(opts.verbose);
@@ -171,6 +172,6 @@ mod tests {
 
         assert!(opts.stdout);
         assert_eq!(opts.memory, Some(512 * 1024));
-        assert_eq!(opts.files(), ["file.xz"]);
+        assert_eq!(opts.files(), [PathBuf::from("file.xz")]);
     }
 }

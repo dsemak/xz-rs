@@ -2,7 +2,7 @@
 
 use std::env;
 use std::ffi::{OsStr, OsString};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use xz_cli::has_compression_extension;
 
@@ -14,7 +14,7 @@ pub struct ParsedArgs {
     /// Options forwarded to the underlying `diff` invocation.
     pub diff_args: Vec<OsString>,
     /// FILE1 [FILE2] operands as provided by the user.
-    pub operands: Vec<OsString>,
+    pub operands: Vec<PathBuf>,
     /// Whether `--help` (or `--h*`) was requested.
     pub show_help: bool,
     /// Whether `--version` (or `--v*`) was requested.
@@ -28,8 +28,8 @@ pub struct ParsedArgs {
 pub fn parse_args(args: &[OsString]) -> ParsedArgs {
     let diff_program = env::var_os("DIFF").unwrap_or_else(|| OsString::from("diff"));
 
-    let mut diff_args: Vec<OsString> = Vec::new();
-    let mut operands: Vec<OsString> = Vec::new();
+    let mut diff_args = Vec::new();
+    let mut operands = Vec::new();
     let mut show_help = false;
     let mut show_version = false;
 
@@ -64,7 +64,7 @@ pub fn parse_args(args: &[OsString]) -> ParsedArgs {
     }
 
     for arg in it {
-        operands.push(arg);
+        operands.push(PathBuf::from(arg));
     }
 
     ParsedArgs {
@@ -80,7 +80,7 @@ pub fn parse_args(args: &[OsString]) -> ParsedArgs {
 ///
 /// If only a single operand is provided, the second operand is inferred by stripping
 /// a supported compression suffix from `file1` (e.g. `foo.xz -> foo`).
-pub fn resolve_operands(operands: &[OsString]) -> Result<(OsString, OsString), String> {
+pub fn resolve_operands(operands: &[PathBuf]) -> Result<(PathBuf, PathBuf), String> {
     match operands.len() {
         1 => {
             let file1 = operands[0].clone();
@@ -97,27 +97,29 @@ pub fn resolve_operands(operands: &[OsString]) -> Result<(OsString, OsString), S
 /// This follows upstream `xzdiff` behavior:
 /// - `.xz`/`.lzma` suffix is stripped (case-insensitive).
 /// - `.txz`/`.tlz` is mapped to `.tar` (case-insensitive).
-fn infer_second_operand(file1: &OsStr) -> Result<OsString, String> {
-    let s = file1.to_string_lossy();
+fn infer_second_operand(file1: &Path) -> Result<PathBuf, String> {
+    let display = file1.display().to_string();
+    let file1_text = file1.as_os_str().to_string_lossy();
 
-    if ends_with_ignore_ascii_case(&s, ".txz") || ends_with_ignore_ascii_case(&s, ".tlz") {
+    if ends_with_ignore_ascii_case(&file1_text, ".txz")
+        || ends_with_ignore_ascii_case(&file1_text, ".tlz")
+    {
         // Map `.t{x,l}z` -> `.tar` like upstream `xzdiff`.
         //
         // Example: `foo.txz` -> `foo.tar`
-        let replaced = s[..s.len().saturating_sub(2)].to_string() + "ar";
-        return Ok(OsString::from(replaced));
+        let replaced = file1_text[..file1_text.len().saturating_sub(2)].to_string() + "ar";
+        return Ok(PathBuf::from(replaced));
     }
 
-    let path = Path::new(file1);
-    if !has_compression_extension(path) {
-        return Err(format!("{s}: Unknown compressed file name suffix"));
+    if !has_compression_extension(file1) {
+        return Err(format!("{display}: Unknown compressed file name suffix"));
     }
 
-    let stem = path
+    let stem = file1
         .file_stem()
-        .ok_or_else(|| format!("{s}: Unknown compressed file name suffix"))?;
-    let parent = path.parent().unwrap_or_else(|| Path::new("."));
-    Ok(parent.join(stem).into_os_string())
+        .ok_or_else(|| format!("{display}: Unknown compressed file name suffix"))?;
+    let parent = file1.parent().unwrap_or_else(|| Path::new("."));
+    Ok(parent.join(stem))
 }
 
 /// Returns `true` if `haystack` ends with `needle`, comparing ASCII case-insensitively.
@@ -139,7 +141,7 @@ mod tests {
         let parsed = parse_args(&args);
 
         assert!(parsed.diff_args.is_empty());
-        assert!(parsed.operands == vec![OsString::from("-"), OsString::from("file.txt")]);
+        assert!(parsed.operands == vec![PathBuf::from("-"), PathBuf::from("file.txt")]);
     }
 
     /// Options must be forwarded to `diff` until the first operand or `--`.
@@ -154,26 +156,26 @@ mod tests {
         let parsed = parse_args(&args);
 
         assert!(parsed.diff_args == vec![OsString::from("-u")]);
-        assert!(parsed.operands == vec![OsString::from("a"), OsString::from("b")]);
+        assert!(parsed.operands == vec![PathBuf::from("a"), PathBuf::from("b")]);
     }
 
     /// `.xz` suffix should be stripped when inferring the second operand.
     #[test]
     fn infer_second_operand_strips_xz_extension() {
-        let out = match infer_second_operand(OsStr::new("foo.txt.xz")) {
+        let out = match infer_second_operand(Path::new("foo.txt.xz")) {
             Ok(v) => v,
             Err(err) => panic!("infer_second_operand failed: {err}"),
         };
-        assert!(out == OsStr::new("foo.txt"));
+        assert_eq!(out, PathBuf::from("foo.txt"));
     }
 
     /// `.txz` should map to `.tar` like upstream `xzdiff`.
     #[test]
     fn infer_second_operand_maps_txz_to_tar() {
-        let out = match infer_second_operand(OsStr::new("foo.txz")) {
+        let out = match infer_second_operand(Path::new("foo.txz")) {
             Ok(v) => v,
             Err(err) => panic!("infer_second_operand failed: {err}"),
         };
-        assert!(out == OsStr::new("foo.tar"));
+        assert_eq!(out, PathBuf::from("foo.tar"));
     }
 }

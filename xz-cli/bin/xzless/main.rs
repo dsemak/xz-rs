@@ -47,7 +47,7 @@ fn run() -> Result<i32, String> {
     }
 
     let files = if parsed.files.is_empty() {
-        vec![OsString::from("-")]
+        vec![PathBuf::from("-")]
     } else {
         parsed.files.clone()
     };
@@ -107,24 +107,15 @@ fn print_version() {
 /// a temporary file and that temporary path is returned. Otherwise, the original
 /// path is returned.
 fn prepare_input_for_pager(
-    file: &OsStr,
+    file: &Path,
     config: &CliConfig,
     temps: &mut Vec<NamedTempFile>,
 ) -> Result<PathBuf, String> {
-    if file == OsStr::new("-") {
-        return Ok(PathBuf::from("-"));
+    if !has_compression_extension(file) {
+        return Ok(file.to_path_buf());
     }
 
-    let path = Path::new(file);
-    if !has_compression_extension(path) {
-        return Ok(path.to_path_buf());
-    }
-
-    let mut input = open_input(
-        path.to_str()
-            .ok_or_else(|| "Non-UTF8 paths are not supported".to_string())?,
-    )
-    .map_err(|err| err.to_string())?;
+    let mut input = open_input(file).map_err(|err| err.to_string())?;
 
     let tmp = NamedTempFile::new().map_err(|err| err.to_string())?;
     {

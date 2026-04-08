@@ -1,6 +1,7 @@
 //! Command line argument parsing for the xzdec utility.
 
 use clap::Parser;
+use std::path::PathBuf;
 
 use xz_cli::{parse_memory_limit, CliConfig, OperationMode};
 
@@ -92,8 +93,8 @@ impl XzDecOpts {
     }
 
     /// Files supplied on the command line
-    pub fn files(&self) -> &[String] {
-        &self.files
+    pub fn files(&self) -> Vec<PathBuf> {
+        self.files.iter().map(PathBuf::from).collect()
     }
 
     /// Check if quiet mode is enabled (suppress errors when -q specified twice)
@@ -133,7 +134,7 @@ mod tests {
     fn parse_from_args_reads_memory_limit() {
         let opts = XzDecOpts::try_parse_from(["xzdec", "-M", "512K", "input.xz"]).unwrap();
 
-        assert_eq!(opts.files(), ["input.xz"]);
+        assert_eq!(opts.files(), [PathBuf::from("input.xz")]);
         assert_eq!(opts.memory, Some(512 * 1024));
         assert!(!opts.is_quiet());
     }
@@ -154,7 +155,7 @@ mod tests {
         let opts =
             XzDecOpts::try_parse_from(["xzdec", "-d", "-k", "-c", "-Q", "input.xz"]).unwrap();
 
-        assert_eq!(opts.files(), ["input.xz"]);
+        assert_eq!(opts.files(), [PathBuf::from("input.xz")]);
         // These options should be parsed but ignored in behavior
         assert!(opts.decompress);
         assert!(opts.keep);
@@ -176,7 +177,7 @@ mod tests {
             Err(e) => panic!("failed to parse aliases: {e}"),
         };
 
-        assert_eq!(opts.files(), ["input.xz"]);
+        assert_eq!(opts.files(), [PathBuf::from("input.xz")]);
         assert!(opts.decompress);
         assert!(opts.stdout);
         assert_eq!(opts.memory, Some(512 * 1024));

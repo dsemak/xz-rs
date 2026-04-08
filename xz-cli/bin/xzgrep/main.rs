@@ -57,13 +57,13 @@ fn run() -> Result<i32, String> {
     }
 
     let files = if parsed.files.is_empty() {
-        vec![OsString::from("-")]
+        vec![PathBuf::from("-")]
     } else {
         parsed.files.clone()
     };
 
     // stdin cannot be meaningfully consumed more than once.
-    let stdin_count = files.iter().filter(|f| *f == OsStr::new("-")).count();
+    let stdin_count = files.iter().filter(|file| *file == Path::new("-")).count();
     if stdin_count > 0 && files.len() > 1 {
         return Err("'-' can only be used as the sole input".to_string());
     }
@@ -100,7 +100,6 @@ fn run() -> Result<i32, String> {
                 &parsed.grep_args,
                 need_filename_prefix,
                 &path,
-                file,
                 &caps,
             )?,
         };
@@ -192,16 +191,15 @@ enum InputKind {
 }
 
 /// Classify an input argument as stdin, plain file, or compressed file.
-fn classify_input(file: &OsStr) -> InputKind {
-    if file == OsStr::new("-") {
+fn classify_input(file: &Path) -> InputKind {
+    if file == Path::new("-") {
         return InputKind::Stdin;
     }
 
-    let p = Path::new(file);
-    if has_compression_extension(p) {
-        InputKind::Compressed(p.to_path_buf())
+    if has_compression_extension(file) {
+        InputKind::Compressed(file.to_path_buf())
     } else {
-        InputKind::Plain(p.to_path_buf())
+        InputKind::Plain(file.to_path_buf())
     }
 }
 
@@ -257,14 +255,9 @@ fn run_grep_on_compressed_file(
     grep_args: &[OsString],
     need_filename_prefix: bool,
     path: &Path,
-    original_label: &OsStr,
     caps: &GrepCaps,
 ) -> Result<i32, String> {
-    let mut input = open_input(
-        path.to_str()
-            .ok_or_else(|| "Non-UTF8 paths are not supported".to_string())?,
-    )
-    .map_err(|e| e.to_string())?;
+    let mut input = open_input(path).map_err(|err| err.to_string())?;
 
     let mut cmd = Command::new(grep_program);
     cmd.args(grep_base_args);
@@ -273,9 +266,9 @@ fn run_grep_on_compressed_file(
     if need_filename_prefix {
         cmd.arg("-H");
     }
-    if caps.supports_label && original_label != OsStr::new("-") {
+    if caps.supports_label {
         cmd.arg("--label");
-        cmd.arg(original_label);
+        cmd.arg(path);
     }
 
     // Grep reads decompressed content from stdin.

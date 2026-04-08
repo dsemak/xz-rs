@@ -1,7 +1,7 @@
 //! Error types for XZ CLI operations.
 
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use thiserror::Error;
 
@@ -108,7 +108,7 @@ pub struct Report {
 
 impl Report {
     /// Records a diagnostic and updates aggregated status.
-    pub fn record(&mut self, cause: DiagnosticCause, program: &str, file: Option<&str>) {
+    pub fn record(&mut self, cause: DiagnosticCause, program: &str, file: Option<&Path>) {
         self.status.observe_cli_error(&cause);
         self.diagnostics.push(Diagnostic::new(cause, program, file));
     }
@@ -123,7 +123,7 @@ pub struct Diagnostic {
     /// Program name to prefix in error output (e.g. "xz", "unxz").
     pub program: String,
     /// Input file path, or `None` for stdin.
-    pub file: Option<String>,
+    pub file: Option<PathBuf>,
     /// Underlying diagnostic cause produced by processing.
     pub cause: DiagnosticCause,
 }
@@ -141,10 +141,10 @@ impl Diagnostic {
     /// # Returns
     ///
     /// Returns a new [`Diagnostic`] instance with the provided context.
-    pub fn new(cause: DiagnosticCause, program: &str, file: Option<&str>) -> Self {
+    pub fn new(cause: DiagnosticCause, program: &str, file: Option<&Path>) -> Self {
         Self {
             program: program.to_string(),
-            file: file.map(String::from),
+            file: file.map(PathBuf::from),
             cause,
         }
     }
@@ -153,7 +153,7 @@ impl Diagnostic {
 impl std::fmt::Display for Diagnostic {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.file.as_deref() {
-            Some(file) => write!(f, "{}: {}: {}", self.program, file, self.cause),
+            Some(file) => write!(f, "{}: {}: {}", self.program, file.display(), self.cause),
             None => write!(f, "{}: (stdin): {}", self.program, self.cause),
         }
     }

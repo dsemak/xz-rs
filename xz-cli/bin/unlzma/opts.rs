@@ -1,6 +1,7 @@
 //! Command line argument parsing for the unlzma utility.
 
 use clap::Parser;
+use std::path::PathBuf;
 
 use xz_cli::{parse_memory_limit, CliConfig, OperationMode};
 
@@ -110,7 +111,7 @@ impl UnlzmaOpts {
     }
 
     /// Files supplied on the command line.
-    pub fn files(&self) -> &[String] {
-        &self.files
+    pub fn files(&self) -> Vec<PathBuf> {
+        self.files.iter().map(PathBuf::from).collect()
     }
 }

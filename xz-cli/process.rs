@@ -1,7 +1,7 @@
 //! High-level file processing and CLI orchestration.
 
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::config::{CliConfig, OperationMode};
 use crate::error::{DiagnosticCause, Error, ExitStatus, IoErrorNoCode, Report, Result};
@@ -10,6 +10,11 @@ use crate::io::{
     generate_output_filename, open_input, open_output, open_output_file, SparseFileWriter,
 };
 use crate::operations::{compress_file, decompress_file, list_file, list_file_with_context};
+
+/// Returns `true` if the input path is stdin.
+fn is_stdin_path(input_path: &Path) -> bool {
+    input_path.as_os_str().is_empty() || input_path == Path::new("-")
+}
 
 /// Removes the input file after successful processing.
 ///
@@ -28,13 +33,13 @@ use crate::operations::{compress_file, decompress_file, list_file, list_file_wit
 /// # Errors
 ///
 /// Returns an error if file removal fails.
-pub fn cleanup_input_file(input_path: &str, config: &CliConfig) -> Result<()> {
+pub fn cleanup_input_file(input_path: &Path, config: &CliConfig) -> Result<()> {
     // Never delete input file in Test mode
     if config.mode == OperationMode::Test || config.mode == OperationMode::List {
         return Ok(());
     }
 
-    let is_stdin = input_path.is_empty() || input_path == "-";
+    let is_stdin = is_stdin_path(input_path);
 
     if !config.keep && !is_stdin && !config.stdout {
         std::fs::remove_file(input_path).map_err(|source| {
@@ -44,7 +49,7 @@ pub fn cleanup_input_file(input_path: &str, config: &CliConfig) -> Result<()> {
         })?;
 
         if config.verbose {
-            eprintln!("Removed input file: {input_path}");
+            eprintln!("Removed input file: {}", input_path.display());
         }
     }
     Ok(())
@@ -87,8 +92,8 @@ pub fn cleanup_input_file(input_path: &str, config: &CliConfig) -> Result<()> {
 /// - Output file exists and `force` flag is not set
 /// - Compression/decompression operation fails
 /// - Input file removal fails (when cleanup is enabled)
-pub fn process_file(input_path: &str, config: &CliConfig) -> Result<()> {
-    let is_stdin = input_path.is_empty() || input_path == "-";
+pub fn process_file(input_path: &Path, config: &CliConfig) -> Result<()> {
+    let is_stdin = is_stdin_path(input_path);
 
     if matches!(config.format, xz_core::config::DecodeMode::Raw)
         && matches!(
@@ -108,7 +113,7 @@ pub fn process_file(input_path: &str, config: &CliConfig) -> Result<()> {
     let input_path_buf = if is_stdin {
         PathBuf::new()
     } else {
-        PathBuf::from(input_path)
+        input_path.to_path_buf()
     };
 
     let input = open_input(input_path)?;
@@ -175,9 +180,9 @@ pub fn process_file(input_path: &str, config: &CliConfig) -> Result<()> {
 
             if config.verbose || config.robot {
                 if config.robot {
-                    println!("OK {input_path}");
+                    println!("OK {}", input_path.display());
                 } else {
-                    eprintln!("Test successful: {input_path}");
+                    eprintln!("Test successful: {}", input_path.display());
                 }
             }
         }
@@ -276,7 +281,7 @@ pub fn parse_memory_limit(s: &str) -> Result<u64> {
 ///
 /// Returns `Ok(())` on success, or an error if any file operation fails.
 /// Gracefully handles `BrokenPipe` errors by returning `Ok(())`.
-fn process_list_files(files: &[String], config: &CliConfig, program: &str) -> Report {
+fn process_list_files(files: &[PathBuf], config: &CliConfig, program: &str) -> Report {
     let mut report = Report::default();
     let total = files.len();
     let mut header_printed = false;
@@ -332,7 +337,7 @@ fn process_list_files(files: &[String], config: &CliConfig, program: &str) -> Re
 /// # Returns
 ///
 /// Returns `Ok(())` if all files were processed successfully.
-fn process_files(files: &[String], config: &CliConfig, program: &str) -> Report {
+fn process_files(files: &[PathBuf], config: &CliConfig, program: &str) -> Report {
     let mut report = Report::default();
     for file in files {
         match process_file(file, config) {
@@ -368,7 +373,7 @@ fn process_files(files: &[String], config: &CliConfig, program: &str) -> Report 
 ///
 /// This function does not fail fast. It continues processing remaining files
 /// after per-file errors and aggregates the exit code like upstream `xz`.
-pub fn run_cli(files: &[String], config: &CliConfig, program: &str) -> Report {
+pub fn run_cli(files: &[PathBuf], config: &CliConfig, program: &str) -> Report {
     let mut report = Report::default();
 
     if config.mode == OperationMode::List && files.is_empty() {
@@ -382,7 +387,7 @@ pub fn run_cli(files: &[String], config: &CliConfig, program: &str) -> Report {
     }
 
     if files.is_empty() {
-        match process_file("", config) {
+        match process_file(Path::new(""), config) {
             Ok(()) => {}
             Err(err) => {
                 if !is_broken_pipe(&err) {

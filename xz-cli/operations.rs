@@ -2,6 +2,7 @@
 
 use std::fs::File;
 use std::io;
+use std::path::Path;
 
 use xz_core::{
     config::EncodeFormat,
@@ -624,12 +625,13 @@ pub fn decompress_file(
 /// - The file cannot be opened or read
 /// - The file is not a valid XZ file
 /// - Memory limit is exceeded during analysis
-pub fn list_file(input_path: &str, config: &CliConfig) -> Result<()> {
+pub fn list_file(input_path: &Path, config: &CliConfig) -> Result<()> {
     let ctx = ListOutputContext {
         file_index: 1,
         file_count: 1,
         print_header: !config.robot && !config.verbose,
     };
+
     let _ = list_file_with_context(input_path, config, ctx)?;
     Ok(())
 }
@@ -654,12 +656,12 @@ pub fn list_file(input_path: &str, config: &CliConfig) -> Result<()> {
 /// - The file is not a valid XZ file
 /// - Memory limit is exceeded during analysis
 /// - Writing to stdout fails (e.g., broken pipe)
-pub(crate) fn list_file_with_context(
-    input_path: &str,
+pub fn list_file_with_context(
+    input_path: &Path,
     config: &CliConfig,
     ctx: ListOutputContext,
 ) -> Result<ListSummary> {
-    if input_path.is_empty() || input_path == "-" {
+    if input_path.as_os_str().is_empty() || input_path == Path::new("-") {
         return Err(DiagnosticCause::from(Error::ListModeStdinUnsupported));
     }
 
@@ -673,7 +675,7 @@ pub(crate) fn list_file_with_context(
     let memlimit = config.memory_limit.and_then(std::num::NonZeroU64::new);
     let info = file_info::extract_file_info(&mut file, memlimit).map_err(|e| {
         DiagnosticCause::from(Error::FileInfoExtraction {
-            path: input_path.to_string(),
+            path: input_path.display().to_string(),
             message: e.to_string(),
         })
     })?;
@@ -694,7 +696,7 @@ pub(crate) fn list_file_with_context(
         writeln!(
             out,
             "{}\t{}\t{}\t{}\t{:.3}\t{}",
-            input_path,
+            input_path.display(),
             info.stream_count(),
             info.block_count(),
             info.file_size(),
