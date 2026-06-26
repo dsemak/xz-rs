@@ -31,10 +31,11 @@ fn case_label(dataset: DatasetKind, size: usize, level: u32) -> String {
     format!("{}/{}/level-{level}", dataset.label(), size_label(size))
 }
 
-fn prepare_group<'a>(c: &'a mut Criterion, name: String) -> BenchmarkGroup<'a, WallTime> {
+fn prepare_group(c: &mut Criterion, name: String) -> BenchmarkGroup<'_, WallTime> {
     c.benchmark_group(name)
 }
 
+#[derive(Copy, Clone)]
 struct CompressCase<'a> {
     binary_name: &'a str,
     format: CodecFormat,
@@ -45,6 +46,7 @@ struct CompressCase<'a> {
     data: &'a [u8],
 }
 
+#[derive(Copy, Clone)]
 struct DecodeCase<'a> {
     binary_name: &'a str,
     format: CodecFormat,

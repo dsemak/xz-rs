@@ -29,13 +29,13 @@ impl VectorKind {
     }
 
     fn from_name(name: &str) -> Self {
-        if name.ends_with(".xz") {
+        if has_extension(name, "xz") {
             return Self::Xz;
         }
-        if name.ends_with(".lz") {
+        if has_extension(name, "lz") {
             return Self::Lz;
         }
-        if name.ends_with(".lzma") {
+        if has_extension(name, "lzma") {
             return Self::Lzma;
         }
 
@@ -45,6 +45,10 @@ impl VectorKind {
 
 impl Vector {
     /// Loads a bundled test vector and infers its group from the file name.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the vector file cannot be read.
     pub fn bundled(name: &str) -> Self {
         let kind = VectorKind::from_name(name);
         let path = bundled_vector_path(kind, name);
@@ -80,6 +84,10 @@ impl Vector {
     }
 
     /// Copies the bundled vector into a fixture directory under a custom name.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the vector file cannot be copied.
     pub fn copy_to_as(&self, root_dir: &Path, target_name: &str) -> PathBuf {
         let source = self.source_path();
         let target = root_dir.join(target_name);
@@ -92,6 +100,13 @@ impl Vector {
         });
         target
     }
+}
+
+/// Checks if a file name has a given extension.
+fn has_extension(name: &str, extension: &str) -> bool {
+    Path::new(name)
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case(extension))
 }
 
 /// Returns the absolute path to a bundled vector fixture.

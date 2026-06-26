@@ -255,7 +255,7 @@ mod tests {
                     }
                 }
                 Err(Error::SeekNeeded) => {
-                    pos = decoder.seek_pos() as usize;
+                    pos = usize::try_from(decoder.seek_pos()).unwrap();
                     action = Action::Run;
                 }
                 Err(err) => panic!("decoder should finish successfully: {err:?}"),

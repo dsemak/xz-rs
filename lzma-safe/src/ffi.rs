@@ -332,7 +332,8 @@ pub(crate) fn decode_xz_index_field(
 /// Encode an [`Index`] into the raw XZ Index field bytes stored in a Stream.
 pub(crate) fn encode_xz_index_field(index: &Index) -> Result<Vec<u8>> {
     // SAFETY: `index.as_ptr()` is a valid liblzma index pointer for shared access.
-    let encoded_size = unsafe { liblzma_sys::lzma_index_size(index.as_ptr()) as usize };
+    let encoded_size =
+        usize::try_from(unsafe { liblzma_sys::lzma_index_size(index.as_ptr()) }).unwrap();
     let mut encoded = vec![0u8; encoded_size];
     let mut out_pos = 0usize;
 

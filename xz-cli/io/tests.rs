@@ -130,7 +130,7 @@ fn sparse_writer_handles_zero_runs_split_across_writes() {
     assert!(zeros.iter().all(|&b| b == 0));
 }
 
-/// Test that open_output rejects existing file atomically without force.
+/// Test that `open_output` rejects existing file atomically without force.
 #[test]
 fn open_output_rejects_existing_file_atomically_without_force() {
     let (_dir, path) = temp_file("existing.tmp").unwrap();
@@ -144,7 +144,7 @@ fn open_output_rejects_existing_file_atomically_without_force() {
     ));
 }
 
-/// Test that open_output_file rejects existing file atomically without force.
+/// Test that `open_output_file` rejects existing file atomically without force.
 #[test]
 fn open_output_file_rejects_existing_file_atomically_without_force() {
     let (_dir, path) = temp_file("existing-file.tmp").unwrap();

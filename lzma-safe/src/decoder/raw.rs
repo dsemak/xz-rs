@@ -20,6 +20,17 @@ pub struct RawDecoder {
 impl RawDecoder {
     /// Creates a new raw LZMA1 decoder.
     ///
+    /// # Parameters
+    ///
+    /// * `memlimit` - Maximum memory usage for decoding (in bytes).
+    /// * `flags` - Decoder behavior flags (see [`options::Flags`]).
+    /// * `lzma1` - LZMA1 filter options.
+    /// * `stream` - An initialized [`Stream`] for LZMA operations.
+    ///
+    /// # Returns
+    ///
+    /// Returns a new [`RawDecoder`] if successful.
+    ///
     /// # Errors
     ///
     /// Returns [`crate::Error::OptionsError`] if the linked liblzma rejects the filter chain.
@@ -47,7 +58,35 @@ impl RawDecoder {
         })
     }
 
-    /// Decompresses input data using the raw decoder.
+    /// Decompresses raw LZMA1 filter input.
+    ///
+    /// Feeds compressed bytes into the underlying liblzma stream and writes decompressed
+    /// output into `output`. Call repeatedly until [`Action::Finish`] completes the stream
+    /// and [`is_finished()`](Self::is_finished) returns `true`.
+    ///
+    /// When `input` is empty, the current input pointer is left unchanged so liblzma can
+    /// continue consuming bytes buffered from earlier calls. On [`Action::Finish`] with no
+    /// buffered input remaining, the input pointer is cleared explicitly.
+    ///
+    /// # Parameters
+    ///
+    /// * `input` - Buffer containing compressed data to decode.
+    /// * `output` - Buffer to write decompressed data into.
+    /// * `action` - Decoding action (e.g. [`Action::Run`], [`Action::Finish`]).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`crate::Error::BufError`] if no progress is possible (e.g. output buffer too small).
+    /// Returns [`crate::Error::DataError`] if input data is corrupted or truncated.
+    /// Returns [`crate::Error::MemError`] if memory allocation fails.
+    /// Returns [`crate::Error::MemLimitError`] if the configured memory limit is exceeded.
+    /// Returns [`crate::Error::ProgError`] if the decoder is misused (e.g. calling after finish).
+    ///
+    /// # Returns
+    ///
+    /// Returns a tuple `(bytes_read, bytes_written)` on success, indicating how much input
+    /// was consumed and output produced in this call. End-of-stream is reported as `Ok`, not
+    /// as an error.
     pub fn process(
         &mut self,
         input: &[u8],

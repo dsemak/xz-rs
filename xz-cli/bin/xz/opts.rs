@@ -262,11 +262,12 @@ impl XzOpts {
         format: DecodeMode,
     ) -> Result<IntegrityCheck, Box<dyn std::error::Error>> {
         match (format, self.check.as_deref()) {
-            (DecodeMode::Lzma, Some("none") | None) => Ok(IntegrityCheck::None),
+            (DecodeMode::Lzma | DecodeMode::Raw, Some("none") | None) => {
+                Ok(IntegrityCheck::None)
+            }
             (DecodeMode::Lzma, Some(other)) => {
                 Err(format!("{other}: Integrity checks are not supported in .lzma format").into())
             }
-            (DecodeMode::Raw, Some("none") | None) => Ok(IntegrityCheck::None),
             (DecodeMode::Raw, Some(other)) => {
                 Err(format!("{other}: Integrity checks are not supported in raw format").into())
             }

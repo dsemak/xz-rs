@@ -17,5 +17,5 @@ include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 #[cfg(not(feature = "bindgen"))]
 include!("lzma_bindings.rs");
 
-/// Size of the legacy LZMA_Alone header in bytes.
+/// Size of the legacy `LZMA_Alone` header in bytes.
 pub const LZMA_ALONE_HEADER_SIZE: usize = 1 + 4 + 8;

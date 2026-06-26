@@ -75,8 +75,8 @@ pub fn prepare_decode_file_fixture(
 
     assert!(
         compressed_path.is_file(),
-        "expected compressed fixture at {:?}",
-        compressed_path
+        "expected compressed fixture at {}",
+        compressed_path.display()
     );
 
     fs::remove_file(&input_path).expect("failed to remove input before decode benchmark");
@@ -105,8 +105,8 @@ pub fn prepare_decode_stdout_fixture(
 
     assert!(
         compressed_path.is_file(),
-        "expected compressed fixture at {:?}",
-        compressed_path
+        "expected compressed fixture at {}",
+        compressed_path.display()
     );
 
     fs::remove_file(&input_path).expect("failed to remove input before decode benchmark");

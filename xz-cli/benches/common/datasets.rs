@@ -77,7 +77,7 @@ fn build_random_bytes(len: usize, mut seed: u64) -> Vec<u8> {
         seed ^= seed << 13;
         seed ^= seed >> 7;
         seed ^= seed << 17;
-        data.push((seed >> 24) as u8);
+        data.push(u8::try_from(seed >> 24).unwrap());
     }
     data
 }

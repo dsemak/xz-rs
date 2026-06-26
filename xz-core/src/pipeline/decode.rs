@@ -301,9 +301,8 @@ impl DecoderSession {
             let consumed = self.consumed;
             let pending_len = self.pending_len;
             let (used, written) = {
-                let decoder = match self.decoder.as_mut() {
-                    Some(decoder) => decoder,
-                    None => unreachable!("decoder session always retains a decoder"),
+                let Some(decoder) = self.decoder.as_mut() else {
+                    unreachable!("decoder session always retains a decoder")
                 };
                 let input = &self.input[consumed..pending_len];
                 let output = &mut self.output;
@@ -409,9 +408,8 @@ impl DecoderSession {
 
     /// Returns the mutable parts needed by the finish path.
     pub fn finish_parts(&mut self) -> (&mut BuiltDecoder, &mut [u8], &mut u64) {
-        let decoder = match self.decoder.as_mut() {
-            Some(decoder) => decoder,
-            None => unreachable!("decoder session always retains a decoder"),
+        let Some(decoder) = self.decoder.as_mut() else {
+            unreachable!("decoder session always retains a decoder")
         };
         let output = &mut self.output[..];
         let total_out = &mut self.total_out;
@@ -428,9 +426,8 @@ impl DecoderSession {
             return Ok(());
         }
 
-        let decoder = match self.decoder.take() {
-            Some(decoder) => decoder,
-            None => unreachable!("decoder session always retains a decoder"),
+        let Some(decoder) = self.decoder.take() else {
+            unreachable!("decoder session always retains a decoder")
         };
         let bootstrap = DecoderBootstrap::new(decoder, options, &self.input[..self.pending_len])?;
         self.decoder = Some(bootstrap.decoder);

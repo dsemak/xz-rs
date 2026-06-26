@@ -698,18 +698,18 @@ mod tests {
         let index = decoder.index().unwrap();
 
         let encoded = index.encode_xz_index_field().unwrap();
-        let mut decoded = Index::decode_xz_index_field(&encoded, u64::MAX).unwrap();
+        let mut decoded_index = Index::decode_xz_index_field(&encoded, u64::MAX).unwrap();
         let footer = compressed[compressed.len() - crate::stream::HEADER_SIZE..]
             .try_into()
             .unwrap();
-        decoded.set_stream_flags_from_footer(&footer).unwrap();
+        decoded_index.set_stream_flags_from_footer(&footer).unwrap();
 
-        assert_eq!(decoded.stream_count(), index.stream_count());
-        assert_eq!(decoded.block_count(), index.block_count());
-        assert_eq!(decoded.file_size(), index.file_size());
-        assert_eq!(decoded.uncompressed_size(), index.uncompressed_size());
-        assert_eq!(decoded.stream_size(), index.stream_size());
-        assert_eq!(decoded.checks(), index.checks());
+        assert_eq!(decoded_index.stream_count(), index.stream_count());
+        assert_eq!(decoded_index.block_count(), index.block_count());
+        assert_eq!(decoded_index.file_size(), index.file_size());
+        assert_eq!(decoded_index.uncompressed_size(), index.uncompressed_size());
+        assert_eq!(decoded_index.stream_size(), index.stream_size());
+        assert_eq!(decoded_index.checks(), index.checks());
     }
 
     /// Test `IndexIterator` with Stream mode using Iterator trait.

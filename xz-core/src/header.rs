@@ -2,7 +2,7 @@
 
 use std::io;
 
-/// Size of the legacy LZMA_Alone header in bytes.
+/// Size of the legacy `LZMA_Alone` header in bytes.
 pub const LZMA_ALONE_HEADER_SIZE: usize = lzma_safe::LZMA_ALONE_HEADER_SIZE;
 
 /// Magic bytes at the beginning of an XZ Stream Header.

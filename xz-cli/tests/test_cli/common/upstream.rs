@@ -206,7 +206,6 @@ async fn assert_roundtrip_case(
     );
     assert_eq!(
         decompressed.stdout_raw, data,
-        "roundtrip mismatch for {file_name} with {:?}",
-        case_args
+        "roundtrip mismatch for {file_name} with {case_args:?}"
     );
 }

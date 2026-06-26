@@ -71,22 +71,26 @@ fn parse_nul_delimited(buf: &[u8]) -> io::Result<Vec<PathBuf>> {
     Ok(out)
 }
 
-/// Convert a byte slice to a `PathBuf`, preserving arbitrary OS bytes on Unix.
-#[cfg(unix)]
-fn path_from_bytes(bytes: &[u8]) -> io::Result<PathBuf> {
-    Ok(PathBuf::from(OsString::from_vec(bytes.to_vec())))
-}
-
 /// Convert a byte slice to a `PathBuf`.
+///
+/// On Unix, arbitrary OS bytes are preserved. On other platforms, the slice
+/// must be valid UTF-8.
 ///
 /// # Errors
 ///
-/// Returns an error if the byte slice is not valid UTF-8.
-#[cfg(not(unix))]
+/// Returns an error if the byte slice is not valid UTF-8 on non-Unix platforms.
+#[cfg_attr(unix, allow(clippy::unnecessary_wraps))]
 fn path_from_bytes(bytes: &[u8]) -> io::Result<PathBuf> {
-    let path = String::from_utf8(bytes.to_vec())
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-    Ok(PathBuf::from(path))
+    #[cfg(unix)]
+    {
+        Ok(PathBuf::from(OsString::from_vec(bytes.to_vec())))
+    }
+    #[cfg(not(unix))]
+    {
+        let path = String::from_utf8(bytes.to_vec())
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        Ok(PathBuf::from(path))
+    }
 }
 
 #[cfg(test)]
