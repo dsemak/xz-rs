@@ -464,18 +464,18 @@ fn apply_threads_for_decompression(
         return Ok(options);
     };
 
-    if config.format == xz_core::config::DecodeMode::Lzma {
-        return Ok(options);
-    }
-
-    let thread_count = u32::try_from(threads)
-        .map_err(|_| DiagnosticCause::from(Error::InvalidThreadCount { count: threads }))?;
     if config.format == xz_core::config::DecodeMode::Auto {
         // Auto-detect mode cannot use liblzma's multi-threaded decoder. Ignore the
         // CLI thread request here so common `xz -d -T4 file.xz` style invocations
         // keep working instead of failing up front.
         return Ok(options);
     }
+    if config.format == xz_core::config::DecodeMode::Lzma {
+        return Ok(options);
+    }
+
+    let thread_count = u32::try_from(threads)
+        .map_err(|_| DiagnosticCause::from(Error::InvalidThreadCount { count: threads }))?;
     options = options.with_threads(xz_core::Threading::Exact(thread_count));
     Ok(options)
 }
