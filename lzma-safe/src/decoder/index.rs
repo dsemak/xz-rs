@@ -16,6 +16,8 @@ pub struct IndexDecoder {
     index: Option<Index>,
     /// Allocator from the stream, kept for cleanup
     allocator: Option<LzmaAllocator>,
+    /// Total number of bytes consumed, preserved after finish.
+    total_in: u64,
 }
 
 impl IndexDecoder {
@@ -39,6 +41,7 @@ impl IndexDecoder {
             index_ptr,
             index: None,
             allocator,
+            total_in: 0,
         })
     }
 
@@ -70,30 +73,29 @@ impl IndexDecoder {
         let input_before = stream.avail_in();
 
         // Call lzma_code with proper mutable reference
-        let result = crate::ffi::lzma_code(&mut stream, action);
-        let bytes_read = input_before - stream.avail_in();
+        let mut result = crate::ffi::lzma_code(&mut stream, action);
+        let mut bytes_read = input_before - stream.avail_in();
 
-        // Handle special case for Action::Finish with empty input where liblzma
-        // may require an additional call to signal LZMA_STREAM_END properly.
-        let result =
-            if action == Action::Finish && result.is_ok() && input_before == 0 && bytes_read == 0 {
-                // For empty inputs liblzma may require one additional call before
-                // signalling `LZMA_STREAM_END`. Invoke it here so callers don't
-                // need to loop in trivial cases.
-                let second_result = crate::ffi::lzma_code(&mut stream, action);
-                let second_bytes_read = input_before - stream.avail_in();
+        if action == Action::Finish && bytes_read == 0 {
+            const MAX_RETRIES: usize = 2;
 
-                if (second_result.is_ok() || matches!(second_result, Err(crate::Error::BufError)))
-                    && second_bytes_read == 0
-                {
-                    // Force stream end when no progress is made on the second call
-                    Err(crate::Error::StreamEnd)
-                } else {
-                    second_result
+            for _ in 0..MAX_RETRIES {
+                if !matches!(result, Ok(()) | Err(crate::Error::BufError)) {
+                    break;
                 }
-            } else {
-                result
-            };
+
+                let before = stream.avail_in();
+                let next = crate::ffi::lzma_code(&mut stream, action);
+                let read_delta = before - stream.avail_in();
+                bytes_read += read_delta;
+
+                result = next;
+                if matches!(result, Err(crate::Error::StreamEnd)) || read_delta != 0 {
+                    break;
+                }
+            }
+        }
+        self.total_in = stream.total_in();
 
         match result {
             Ok(()) => {
@@ -103,6 +105,7 @@ impl IndexDecoder {
             }
             Err(crate::Error::StreamEnd) => {
                 // Decoding is finished; extract the index if it's valid.
+                self.total_in = stream.total_in();
                 if !self.index_ptr.is_null() {
                     // SAFETY: index_ptr is valid and was populated by liblzma
                     // Pass the stream's allocator to the index
@@ -137,7 +140,7 @@ impl IndexDecoder {
 
     /// Get the total number of input bytes processed.
     pub fn total_in(&self) -> u64 {
-        self.stream.as_ref().map_or(0, Stream::total_in)
+        self.stream.as_ref().map_or(self.total_in, Stream::total_in)
     }
 
     /// Returns a reference to the extracted index if decoding completed successfully.
@@ -169,6 +172,90 @@ impl Drop for IndexDecoder {
 mod tests {
     use crate::{Action, Error, Stream};
 
+    /// Extra output space for XZ stream header, index, and footer in test compression.
+    const COMPRESS_OUTPUT_SLACK: usize = 2048;
+
+    /// Helper function to compress the data to a XZ stream.
+    fn compress_to_xz_stream(data: &[u8]) -> Vec<u8> {
+        use crate::encoder::options::{Compression, IntegrityCheck};
+
+        let mut encoder = Stream::default()
+            .easy_encoder(Compression::Level3, IntegrityCheck::Crc64)
+            .unwrap();
+        let mut compressed = vec![0u8; data.len().saturating_mul(2) + COMPRESS_OUTPUT_SLACK];
+        let (_, written) = encoder.process(data, &mut compressed, Action::Run).unwrap();
+        let mut total_written = written;
+        let (_, finish_written) = encoder
+            .process(&[], &mut compressed[total_written..], Action::Finish)
+            .unwrap();
+        total_written += finish_written;
+        compressed.truncate(total_written);
+        compressed
+    }
+
+    /// Helper function to extract the index field from the compressed data.
+    fn extract_index_field(data: &[u8]) -> Vec<u8> {
+        let compressed = compress_to_xz_stream(data);
+        let mut decoder = Stream::default()
+            .file_info_decoder(u64::MAX, compressed.len() as u64)
+            .unwrap();
+        let mut pos = 0;
+        let mut action = Action::Run;
+
+        loop {
+            match decoder.process(&compressed[pos..], action) {
+                Ok(bytes_read) => {
+                    pos += bytes_read;
+                    if decoder.is_finished() {
+                        let index = decoder.index().unwrap();
+                        return index.encode_xz_index_field().unwrap();
+                    }
+
+                    if pos >= compressed.len() {
+                        assert!(
+                            !(action == Action::Finish && bytes_read == 0),
+                            "file info decoder made no progress before finishing"
+                        );
+                        action = Action::Finish;
+                    }
+                }
+                Err(Error::SeekNeeded) => {
+                    pos = usize::try_from(decoder.seek_pos()).unwrap();
+                    decoder.clear_input();
+                    action = Action::Run;
+                }
+                Err(err) => panic!("file info decoder should finish successfully: {err:?}"),
+            }
+        }
+    }
+
+    /// Helper function to finish the index decoder by processing the index field.
+    fn finish_index_decoder(index_field: &[u8]) -> super::IndexDecoder {
+        let mut decoder = Stream::default().index_decoder(u64::MAX).unwrap();
+        let mut pos = 0;
+        let mut action = Action::Run;
+
+        loop {
+            match decoder.process(&index_field[pos..], action) {
+                Ok(bytes_read) => {
+                    pos += bytes_read;
+                    if decoder.is_finished() {
+                        return decoder;
+                    }
+
+                    if pos >= index_field.len() {
+                        assert!(
+                            !(action == Action::Finish && bytes_read == 0),
+                            "index decoder made no progress before finishing"
+                        );
+                        action = Action::Finish;
+                    }
+                }
+                Err(err) => panic!("index decoder should finish successfully: {err:?}"),
+            }
+        }
+    }
+
     /// Test [`IndexDecoder`] creation and basic API.
     #[test]
     fn index_decoder_creation() {
@@ -195,6 +282,17 @@ mod tests {
 
         // Should return an error for invalid data
         assert!(result.is_err());
+    }
+
+    /// Test truncated or invalid finish does not masquerade as success.
+    #[test]
+    fn index_decoder_invalid_finish_does_not_mark_finished() {
+        let mut decoder = Stream::default().index_decoder(u64::MAX).unwrap();
+        let result = decoder.process(b"invalid index", Action::Finish);
+
+        assert!(result.is_err());
+        assert!(!decoder.is_finished());
+        assert!(decoder.index().is_none());
     }
 
     /// Test [`IndexDecoder`] `process_after_finish` returns error.
@@ -242,6 +340,16 @@ mod tests {
 
         // Total in may have changed
         let _ = decoder.total_in();
+    }
+
+    /// Test `IndexDecoder` preserves `total_in` after successful finish.
+    #[test]
+    fn index_decoder_preserves_total_in_after_finish() {
+        let index_field = extract_index_field(b"metadata decoder index total_in");
+        let decoder = finish_index_decoder(&index_field);
+
+        assert!(decoder.is_finished());
+        assert_eq!(decoder.total_in(), index_field.len() as u64);
     }
 
     /// Test `IndexDecoder` round-trip with `Encoder`.

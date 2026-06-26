@@ -93,6 +93,15 @@ impl Index {
         Ok(index)
     }
 
+    /// Encode this [`Index`] into the raw XZ Index field bytes stored in a Stream.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if liblzma fails to encode the current index.
+    pub fn encode_xz_index_field(&self) -> Result<Vec<u8>> {
+        ffi::encode_xz_index_field(self)
+    }
+
     /// Set Stream Flags for the last (and typically the only) Stream in this index.
     ///
     /// This is needed for functions like `checks()` to report meaningful values and for
@@ -129,6 +138,10 @@ impl Index {
     /// to invalid index state or memory allocation failure). On error, `other`
     /// remains unchanged and will be dropped normally.
     pub fn append(&mut self, other: Index) -> Result<()> {
+        if !allocators_are_compatible(self.allocator.as_ref(), other.allocator.as_ref()) {
+            return Err(Error::ProgError);
+        }
+
         // Take a local clone to avoid borrowing `self` immutably while it is mutably borrowed.
         let allocator = self.allocator.clone();
         let mut other = ManuallyDrop::new(other);
@@ -163,6 +176,15 @@ impl Index {
     /// Create an iterator over non-empty blocks only.
     pub fn iter_non_empty_blocks(&self) -> IndexIterator<'_> {
         IndexIterator::with_mode(self, IndexIterMode::NonEmptyBlock)
+    }
+}
+
+/// Check if two allocators are compatible.
+fn allocators_are_compatible(left: Option<&LzmaAllocator>, right: Option<&LzmaAllocator>) -> bool {
+    match (left, right) {
+        (Some(left), Some(right)) => left.is_compatible_with(right),
+        (None, None) => true,
+        _ => false,
     }
 }
 
@@ -512,10 +534,34 @@ pub struct BlockInfo {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use crate::encoder::options::{Compression, IntegrityCheck};
-    use crate::{Action, Stream};
+    use crate::stream::Allocator;
+    use crate::{Action, Error, Stream};
 
     use super::*;
+
+    /// Dummy allocator for testing.
+    #[derive(Default)]
+    struct DummyAllocator;
+
+    impl Allocator for DummyAllocator {
+        /// Allocate a block of memory for `nmemb` elements of `size` bytes each.
+        fn alloc(&self, nmemb: usize, size: usize) -> *mut std::ffi::c_void {
+            match nmemb.checked_mul(size) {
+                Some(total) if total > 0 => unsafe { libc::malloc(total) },
+                _ => std::ptr::null_mut(),
+            }
+        }
+
+        /// Free a previously allocated memory block.
+        unsafe fn free(&self, ptr: *mut std::ffi::c_void) {
+            if !ptr.is_null() {
+                libc::free(ptr);
+            }
+        }
+    }
 
     /// Helper function to create a `FileInfoDecoder` from already compressed `.xz` data.
     fn create_test_decoder_from_compressed(compressed: &[u8]) -> Option<crate::FileInfoDecoder> {
@@ -596,6 +642,24 @@ mod tests {
         create_test_decoder_from_compressed(&compressed)
     }
 
+    /// Test that `Index::append()` rejects indexes from incompatible allocators.
+    #[test]
+    fn append_rejects_indexes_from_incompatible_allocators() {
+        let left_allocator = Arc::new(DummyAllocator);
+        let right_allocator = Arc::new(DummyAllocator);
+        let left_context = LzmaAllocator::from_allocator(left_allocator);
+        let right_context = LzmaAllocator::from_allocator(right_allocator);
+
+        let left_raw = unsafe { liblzma_sys::lzma_index_init(left_context.as_ptr()) };
+        let right_raw = unsafe { liblzma_sys::lzma_index_init(right_context.as_ptr()) };
+
+        let mut left = unsafe { Index::from_raw(left_raw, Some(left_context)) }.unwrap();
+        let right = unsafe { Index::from_raw(right_raw, Some(right_context)) }.unwrap();
+
+        let result = left.append(right);
+        assert_eq!(result, Err(Error::ProgError));
+    }
+
     /// Test basic Index creation and accessors.
     #[test]
     fn index_basic_accessors() {
@@ -623,6 +687,29 @@ mod tests {
 
         let checks = index.checks();
         assert_ne!(checks, 0, "Checks should not be zero");
+    }
+
+    /// Test `Index` can round-trip through raw XZ Index field bytes.
+    #[test]
+    fn index_xz_index_field_roundtrip() {
+        let test_data = b"Lazzy dog jumps over the lazy fox".repeat(100);
+        let compressed = compress_to_xz_stream(&test_data).unwrap();
+        let decoder = create_test_decoder_from_compressed(&compressed).unwrap();
+        let index = decoder.index().unwrap();
+
+        let encoded = index.encode_xz_index_field().unwrap();
+        let mut decoded = Index::decode_xz_index_field(&encoded, u64::MAX).unwrap();
+        let footer = compressed[compressed.len() - crate::stream::HEADER_SIZE..]
+            .try_into()
+            .unwrap();
+        decoded.set_stream_flags_from_footer(&footer).unwrap();
+
+        assert_eq!(decoded.stream_count(), index.stream_count());
+        assert_eq!(decoded.block_count(), index.block_count());
+        assert_eq!(decoded.file_size(), index.file_size());
+        assert_eq!(decoded.uncompressed_size(), index.uncompressed_size());
+        assert_eq!(decoded.stream_size(), index.stream_size());
+        assert_eq!(decoded.checks(), index.checks());
     }
 
     /// Test `IndexIterator` with Stream mode using Iterator trait.

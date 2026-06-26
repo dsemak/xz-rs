@@ -180,9 +180,11 @@ pub fn process_file(input_path: &Path, config: &CliConfig) -> Result<()> {
 
             if config.verbose || config.robot {
                 if config.robot {
-                    println!("OK {}", input_path.display());
+                    let display = input_path.display();
+                    eprintln!("OK {display}");
                 } else {
-                    eprintln!("Test successful: {}", input_path.display());
+                    let display = input_path.display();
+                    eprintln!("Test successful: {display}");
                 }
             }
         }
