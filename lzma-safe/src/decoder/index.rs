@@ -172,6 +172,9 @@ impl Drop for IndexDecoder {
 mod tests {
     use crate::{Action, Error, Stream};
 
+    /// Extra output space for XZ stream header, index, and footer in test compression.
+    const COMPRESS_OUTPUT_SLACK: usize = 2048;
+
     /// Helper function to compress the data to a XZ stream.
     fn compress_to_xz_stream(data: &[u8]) -> Vec<u8> {
         use crate::encoder::options::{Compression, IntegrityCheck};
@@ -179,7 +182,7 @@ mod tests {
         let mut encoder = Stream::default()
             .easy_encoder(Compression::Level3, IntegrityCheck::Crc64)
             .unwrap();
-        let mut compressed = vec![0u8; data.len().saturating_mul(2) + 2048];
+        let mut compressed = vec![0u8; data.len().saturating_mul(2) + COMPRESS_OUTPUT_SLACK];
         let (_, written) = encoder.process(data, &mut compressed, Action::Run).unwrap();
         let mut total_written = written;
         let (_, finish_written) = encoder
@@ -199,29 +202,31 @@ mod tests {
         let mut pos = 0;
         let mut action = Action::Run;
 
-        for _ in 0..64 {
+        loop {
             match decoder.process(&compressed[pos..], action) {
                 Ok(bytes_read) => {
                     pos += bytes_read;
-                    if !decoder.is_finished() {
-                        if pos >= compressed.len() {
-                            action = Action::Finish;
-                        }
-                        continue;
+                    if decoder.is_finished() {
+                        let index = decoder.index().unwrap();
+                        return index.encode_xz_index_field().unwrap();
                     }
 
-                    let index = decoder.index().unwrap();
-                    return index.encode_xz_index_field().unwrap();
+                    if pos >= compressed.len() {
+                        assert!(
+                            !(action == Action::Finish && bytes_read == 0),
+                            "file info decoder made no progress before finishing"
+                        );
+                        action = Action::Finish;
+                    }
                 }
                 Err(Error::SeekNeeded) => {
-                    pos = decoder.seek_pos() as usize;
+                    pos = usize::try_from(decoder.seek_pos()).unwrap();
+                    decoder.clear_input();
                     action = Action::Run;
                 }
                 Err(err) => panic!("file info decoder should finish successfully: {err:?}"),
             }
         }
-
-        panic!("failed to extract an encoded index field");
     }
 
     /// Helper function to finish the index decoder by processing the index field.
@@ -230,22 +235,25 @@ mod tests {
         let mut pos = 0;
         let mut action = Action::Run;
 
-        for _ in 0..16 {
+        loop {
             match decoder.process(&index_field[pos..], action) {
                 Ok(bytes_read) => {
                     pos += bytes_read;
                     if decoder.is_finished() {
                         return decoder;
                     }
+
                     if pos >= index_field.len() {
+                        assert!(
+                            !(action == Action::Finish && bytes_read == 0),
+                            "index decoder made no progress before finishing"
+                        );
                         action = Action::Finish;
                     }
                 }
                 Err(err) => panic!("index decoder should finish successfully: {err:?}"),
             }
         }
-
-        panic!("index decoder did not finish within the expected number of steps");
     }
 
     /// Test [`IndexDecoder`] creation and basic API.
@@ -334,7 +342,7 @@ mod tests {
         let _ = decoder.total_in();
     }
 
-    /// Test `IndexDecoder` preserves total_in after successful finish.
+    /// Test `IndexDecoder` preserves `total_in` after successful finish.
     #[test]
     fn index_decoder_preserves_total_in_after_finish() {
         let index_field = extract_index_field(b"metadata decoder index total_in");
