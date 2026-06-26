@@ -133,6 +133,7 @@ impl FileInfoDecoder {
             }
             Err(crate::Error::StreamEnd) => {
                 // Decoding is finished; extract the index if it's valid.
+                self.total_in = stream.total_in();
                 if !(*self.index_ptr_box).is_null() {
                     // SAFETY: index_ptr is valid and was populated by liblzma
                     // Pass the stream's allocator to the index
@@ -216,31 +217,52 @@ impl Drop for FileInfoDecoder {
 mod tests {
     use crate::{Action, Error, Stream};
 
-    fn drive_file_info_decoder(compressed: &[u8]) -> crate::FileInfoDecoder {
+    /// Helper function to compress the data to a XZ stream.
+    fn compress_to_xz_stream(data: &[u8]) -> Vec<u8> {
+        use crate::encoder::options::{Compression, IntegrityCheck};
+
+        let mut encoder = Stream::default()
+            .easy_encoder(Compression::Level3, IntegrityCheck::Crc64)
+            .unwrap();
+        let mut compressed = vec![0u8; data.len().saturating_mul(2) + 2048];
+        let (_, written) = encoder.process(data, &mut compressed, Action::Run).unwrap();
+        let mut total_written = written;
+        let (_, finish_written) = encoder
+            .process(&[], &mut compressed[total_written..], Action::Finish)
+            .unwrap();
+        total_written += finish_written;
+        compressed.truncate(total_written);
+        compressed
+    }
+
+    /// Helper function to finish the file info decoder by processing the compressed data.
+    fn finish_file_info_decoder(compressed: &[u8]) -> super::FileInfoDecoder {
         let mut decoder = Stream::default()
             .file_info_decoder(u64::MAX, compressed.len() as u64)
             .unwrap();
-        let mut pos = 0usize;
+        let mut pos = 0;
         let mut action = Action::Run;
 
-        while !decoder.is_finished() {
+        for _ in 0..64 {
             match decoder.process(&compressed[pos..], action) {
-                Ok(bytes) => {
-                    pos += bytes;
+                Ok(bytes_read) => {
+                    pos += bytes_read;
+                    if decoder.is_finished() {
+                        return decoder;
+                    }
                     if pos >= compressed.len() {
                         action = Action::Finish;
                     }
                 }
                 Err(Error::SeekNeeded) => {
-                    pos = usize::try_from(decoder.seek_pos()).unwrap_or(compressed.len());
-                    decoder.clear_input();
+                    pos = decoder.seek_pos() as usize;
                     action = Action::Run;
                 }
-                Err(err) => panic!("file info decode failed: {err:?}"),
+                Err(err) => panic!("decoder should finish successfully: {err:?}"),
             }
         }
 
-        decoder
+        panic!("decoder did not finish within the expected number of steps");
     }
 
     /// Test [`FileInfoDecoder`] creation and basic API.
@@ -336,6 +358,16 @@ mod tests {
         let _ = decoder.total_in();
     }
 
+    /// Test `FileInfoDecoder` preserves `total_in()` after successful finish.
+    #[test]
+    fn file_info_decoder_preserves_total_in_after_finish() {
+        let compressed = compress_to_xz_stream(b"metadata decoder total_in");
+        let decoder = finish_file_info_decoder(&compressed);
+
+        assert!(decoder.is_finished());
+        assert_eq!(decoder.total_in(), compressed.len() as u64);
+    }
+
     /// Test `FileInfoDecoder` round-trip with `Encoder`.
     ///
     /// Creates compressed data and verifies file info decoder can process it.
@@ -399,30 +431,6 @@ mod tests {
 
         // Try to get the index (may or may not be available depending on how decoding went)
         let _ = file_info_decoder.index();
-    }
-
-    /// Test total input accounting remains available after a successful finish.
-    #[test]
-    fn file_info_decoder_preserves_total_in_after_finish() {
-        use crate::encoder::options::{Compression, IntegrityCheck};
-
-        let payload = b"metadata accounting";
-        let mut encoder = Stream::default()
-            .easy_encoder(Compression::Level3, IntegrityCheck::Crc64)
-            .unwrap();
-        let mut compressed = vec![0u8; 4096];
-        let (read, written) = encoder
-            .process(payload, &mut compressed, Action::Run)
-            .unwrap();
-        assert_eq!(read, payload.len());
-        let (_, finish_written) = encoder
-            .process(&[], &mut compressed[written..], Action::Finish)
-            .unwrap();
-        compressed.truncate(written + finish_written);
-
-        let decoder = drive_file_info_decoder(&compressed);
-        assert!(decoder.is_finished());
-        assert!(decoder.total_in() > 0);
     }
 
     /// Test `FileInfoDecoder` with stream that has zero blocks.
