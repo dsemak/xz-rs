@@ -1,7 +1,8 @@
 //! Command line argument parsing for the xzcat utility.
 
-use clap::Parser;
 use std::path::PathBuf;
+
+use clap::Parser;
 
 use xz_cli::{parse_memory_limit, CliConfig, OperationMode};
 
