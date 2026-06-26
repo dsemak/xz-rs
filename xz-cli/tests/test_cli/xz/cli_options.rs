@@ -424,6 +424,85 @@ add_test!(stdout_long_option, async {
     assert!(!output.stdout.is_empty());
 });
 
+// `xz -d -T4` should still succeed with the default auto-detect format.
+add_test!(threaded_auto_decompression_does_not_fail, async {
+    const FILE_NAME: &str = "threaded_auto_decode.txt";
+    let data = generate_random_data(KB);
+    let mut fixture = Fixture::with_file(FILE_NAME, &data);
+
+    let file_path = fixture.path(FILE_NAME);
+    let compressed_path = fixture.compressed_path(FILE_NAME);
+
+    let output = fixture.run_cargo("xz", &[&file_path]).await;
+    assert!(output.status.success());
+
+    let output = fixture
+        .run_cargo("xz", &["-d", "-T4", "-c", &compressed_path])
+        .await;
+    assert!(output.status.success());
+    assert_eq!(output.stdout_raw, data);
+});
+
+// `--robot -c` must keep compressed bytes on stdout and diagnostics on stderr.
+add_test!(robot_stdout_keeps_compressed_stream_clean, async {
+    const FILE_NAME: &str = "robot_stdout.txt";
+    let data = generate_random_data(KB);
+    let mut fixture = Fixture::with_file(FILE_NAME, &data);
+
+    let file_path = fixture.path(FILE_NAME);
+    let output = fixture
+        .run_cargo("xz", &["--robot", "-c", &file_path])
+        .await;
+    assert!(output.status.success());
+    assert!(!output.stderr.is_empty());
+
+    let roundtrip = fixture
+        .run_with_stdin_raw(BinaryType::cargo("xz"), &["-d", "-c"], &output.stdout_raw)
+        .await;
+    assert!(roundtrip.status.success());
+    assert_eq!(roundtrip.stdout_raw, data);
+});
+
+// `xz -d --robot -c` must keep payload bytes on stdout and diagnostics on stderr.
+add_test!(robot_decompress_stdout_keeps_payload_clean, async {
+    const FILE_NAME: &str = "robot_decompress_stdout.txt";
+    let data = generate_random_data(KB);
+    let mut fixture = Fixture::with_file(FILE_NAME, &data);
+
+    let file_path = fixture.path(FILE_NAME);
+    let compressed_path = fixture.compressed_path(FILE_NAME);
+
+    let output = fixture.run_cargo("xz", &[&file_path]).await;
+    assert!(output.status.success());
+
+    let output = fixture
+        .run_cargo("xz", &["-d", "--robot", "-c", &compressed_path])
+        .await;
+    assert!(output.status.success());
+    assert_eq!(output.stdout_raw, data);
+    assert!(!output.stderr.is_empty());
+});
+
+// `xz -t --robot` must not print status lines to stdout.
+add_test!(robot_test_mode_writes_status_to_stderr, async {
+    const FILE_NAME: &str = "robot_test_mode.txt";
+    let data = generate_random_data(KB);
+    let mut fixture = Fixture::with_file(FILE_NAME, &data);
+
+    let file_path = fixture.path(FILE_NAME);
+    let compressed_path = fixture.compressed_path(FILE_NAME);
+
+    let output = fixture.run_cargo("xz", &[&file_path]).await;
+    assert!(output.status.success());
+
+    let output = fixture
+        .run_cargo("xz", &["-t", "--robot", &compressed_path])
+        .await;
+    assert!(output.status.success());
+    assert!(output.stdout.is_empty());
+    assert!(output.stderr.contains("OK"));
+});
+
 // Test -S/--suffix option
 add_test!(custom_suffix_option, async {
     const FILE_NAME: &str = "suffix_test.txt";

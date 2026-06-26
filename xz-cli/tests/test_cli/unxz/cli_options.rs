@@ -68,6 +68,25 @@ add_test!(stdout_long_option, async {
     assert!(output.stdout_raw == data);
 });
 
+// `unxz -T4` should still succeed with the default auto-detect format.
+add_test!(threaded_auto_decompression_does_not_fail, async {
+    const FILE_NAME: &str = "threaded_auto_decode.txt";
+    let data = generate_random_data(KB);
+    let mut fixture = Fixture::with_file(FILE_NAME, &data);
+
+    let file_path = fixture.path(FILE_NAME);
+    let compressed_path = fixture.compressed_path(FILE_NAME);
+
+    let output = fixture.run_cargo("xz", &[&file_path]).await;
+    assert!(output.status.success());
+
+    let output = fixture
+        .run_cargo("unxz", &["-T4", "--stdout", &compressed_path])
+        .await;
+    assert!(output.status.success());
+    assert_eq!(output.stdout_raw, data);
+});
+
 // Test unxz with --keep (long form)
 add_test!(keep_long_option, async {
     const FILE_NAME: &str = "keep_long.txt";

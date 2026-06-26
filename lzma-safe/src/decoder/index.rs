@@ -16,7 +16,7 @@ pub struct IndexDecoder {
     index: Option<Index>,
     /// Allocator from the stream, kept for cleanup
     allocator: Option<LzmaAllocator>,
-    /// Total input consumed before the stream finished.
+    /// Total number of bytes consumed, preserved after finish.
     total_in: u64,
 }
 
@@ -73,15 +73,29 @@ impl IndexDecoder {
         let input_before = stream.avail_in();
 
         // Call lzma_code with proper mutable reference
-        let result = crate::ffi::lzma_code(&mut stream, action);
-        let bytes_read = input_before - stream.avail_in();
+        let mut result = crate::ffi::lzma_code(&mut stream, action);
+        let mut bytes_read = input_before - stream.avail_in();
 
-        let result =
-            if action == Action::Finish && result.is_ok() && input_before == 0 && bytes_read == 0 {
-                crate::ffi::lzma_code(&mut stream, action)
-            } else {
-                result
-            };
+        if action == Action::Finish && bytes_read == 0 {
+            const MAX_RETRIES: usize = 2;
+
+            for _ in 0..MAX_RETRIES {
+                if !matches!(result, Ok(()) | Err(crate::Error::BufError)) {
+                    break;
+                }
+
+                let before = stream.avail_in();
+                let next = crate::ffi::lzma_code(&mut stream, action);
+                let read_delta = before - stream.avail_in();
+                bytes_read += read_delta;
+
+                result = next;
+                if matches!(result, Err(crate::Error::StreamEnd)) || read_delta != 0 {
+                    break;
+                }
+            }
+        }
+        self.total_in = stream.total_in();
 
         match result {
             Ok(()) => {
@@ -262,13 +276,15 @@ mod tests {
         assert!(result.is_err());
     }
 
+    /// Test truncated or invalid finish does not masquerade as success.
     #[test]
     fn index_decoder_invalid_finish_does_not_mark_finished() {
         let mut decoder = Stream::default().index_decoder(u64::MAX).unwrap();
+        let result = decoder.process(b"invalid index", Action::Finish);
 
-        let err = decoder.process(&[], Action::Finish).unwrap_err();
-        assert_ne!(err, Error::StreamEnd);
+        assert!(result.is_err());
         assert!(!decoder.is_finished());
+        assert!(decoder.index().is_none());
     }
 
     /// Test [`IndexDecoder`] `process_after_finish` returns error.
