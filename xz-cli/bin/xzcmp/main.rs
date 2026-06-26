@@ -95,27 +95,22 @@ fn print_version() {
 /// If the input looks like a supported compressed file, it is decompressed into a temporary
 /// file and the temporary file path is returned. Otherwise the original path is returned.
 fn materialize_for_cmp(
-    path: &OsStr,
+    path: &Path,
     config: &CliConfig,
     temps: &mut Vec<NamedTempFile>,
 ) -> Result<PathBuf, String> {
-    if path == OsStr::new("-") {
+    if path == Path::new("-") {
         // Supporting '-' is best-effort: allow it only for one side, and pass it to cmp.
         // Decompression from stdin is supported by the decompressor, but cmp consumes stdin
         // too; mixing both reliably is tricky, so we don't attempt it here.
         return Ok(PathBuf::from("-"));
     }
 
-    let p = Path::new(path);
-    if !has_compression_extension(p) {
-        return Ok(p.to_path_buf());
+    if !has_compression_extension(path) {
+        return Ok(path.to_path_buf());
     }
 
-    let mut input = open_input(
-        p.to_str()
-            .ok_or_else(|| "Non-UTF8 paths are not supported".to_string())?,
-    )
-    .map_err(|e| e.to_string())?;
+    let mut input = open_input(path).map_err(|e| e.to_string())?;
 
     let tmp = NamedTempFile::new().map_err(|e| e.to_string())?;
     {

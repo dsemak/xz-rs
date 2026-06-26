@@ -1,6 +1,7 @@
 //! Formatting helpers for `xz -l` / `xz -l -v`.
 
 use std::io;
+use std::path::Path;
 
 use crate::error::{DiagnosticCause, Error, IoErrorNoCode, Result};
 use crate::utils::{bytes, math};
@@ -155,7 +156,7 @@ pub(crate) fn write_list_header_if_needed(ctx: ListOutputContext) -> Result<()> 
 /// # Returns
 ///
 /// Returns `Ok(())` on success, or an error if writing to stdout fails.
-pub(crate) fn write_list_row(summary: ListSummary, input_path: &str) -> Result<()> {
+pub(crate) fn write_list_row(summary: ListSummary, input_path: &Path) -> Result<()> {
     use std::io::Write;
 
     let ratio = math::ratio_fraction(summary.compressed, summary.uncompressed);
@@ -171,7 +172,7 @@ pub(crate) fn write_list_row(summary: ListSummary, input_path: &str) -> Result<(
         bytes::format_list_size(summary.uncompressed),
         ratio,
         check,
-        input_path
+        input_path.display()
     )
     .map_err(|source| {
         DiagnosticCause::from(Error::WriteOutput {
@@ -199,7 +200,7 @@ pub(crate) fn write_list_row(summary: ListSummary, input_path: &str) -> Result<(
 /// Returns `Ok(())` on success, or an error if writing to stdout fails.
 #[allow(clippy::too_many_lines)]
 pub(crate) fn write_verbose_report(
-    input_path: &str,
+    input_path: &Path,
     ctx: ListOutputContext,
     summary: ListSummary,
     streams: &[StreamInfo],
@@ -212,7 +213,14 @@ pub(crate) fn write_verbose_report(
     let padding_total: u64 = streams.iter().map(|s| s.padding).sum();
 
     let mut out = io::stdout().lock();
-    writeln!(out, "{input_path} ({}/{})", ctx.file_index, ctx.file_count).map_err(|source| {
+    writeln!(
+        out,
+        "{} ({}/{})",
+        input_path.display(),
+        ctx.file_index,
+        ctx.file_count
+    )
+    .map_err(|source| {
         DiagnosticCause::from(Error::WriteOutput {
             source: IoErrorNoCode::new(source),
         })

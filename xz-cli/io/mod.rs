@@ -1,7 +1,7 @@
 //! File I/O operations and path manipulation for XZ CLI.
 
 use std::ffi::OsStr;
-use std::fs::File;
+use std::fs::{File, OpenOptions};
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -156,23 +156,26 @@ pub fn generate_output_filename(
 /// # Errors
 ///
 /// Returns an error if the file cannot be opened.
-pub fn open_input(path: &str) -> Result<Box<dyn io::Read>> {
-    if path.is_empty() || path == "-" {
-        Ok(Box::new(io::BufReader::with_capacity(
+pub fn open_input(path: &Path) -> Result<Box<dyn io::Read>> {
+    let path = (!path.as_os_str().is_empty() && path != Path::new("-")).then_some(path);
+
+    let Some(path) = path else {
+        return Ok(Box::new(io::BufReader::with_capacity(
             DEFAULT_BUFFER_SIZE,
             io::stdin(),
-        )))
-    } else {
-        let file = File::open(path).map_err(|source| {
-            DiagnosticCause::from(Error::OpenInput {
-                source: IoErrorNoCode::new(source),
-            })
-        })?;
-        Ok(Box::new(io::BufReader::with_capacity(
-            DEFAULT_BUFFER_SIZE,
-            file,
-        )))
-    }
+        )));
+    };
+
+    let file = File::open(path).map_err(|source| {
+        DiagnosticCause::from(Error::OpenInput {
+            source: IoErrorNoCode::new(source),
+        })
+    })?;
+
+    Ok(Box::new(io::BufReader::with_capacity(
+        DEFAULT_BUFFER_SIZE,
+        file,
+    )))
 }
 
 /// Opens an output writer for the given path or stdout.
@@ -205,18 +208,20 @@ pub fn open_output(path: Option<&Path>, config: &CliConfig) -> Result<Box<dyn io
             io::stdout(),
         )))
     } else if let Some(path) = path {
-        // Check if output file exists and we're not forcing overwrite
-        if path.exists() && !config.force {
-            return Err(DiagnosticCause::from(Error::OutputExists {
-                path: path.to_path_buf(),
-            }));
-        }
-        let file = File::create(path).map_err(|source| {
-            DiagnosticCause::from(Error::CreateOutput {
-                path: path.to_path_buf(),
-                source: IoErrorNoCode::new(source),
-            })
-        })?;
+        let file = match open_output_file_with_options(path, config.force) {
+            Ok(file) => file,
+            Err(source) if source.kind() == io::ErrorKind::AlreadyExists && !config.force => {
+                return Err(DiagnosticCause::from(Error::OutputExists {
+                    path: path.to_path_buf(),
+                }));
+            }
+            Err(source) => {
+                return Err(DiagnosticCause::from(Error::CreateOutput {
+                    path: path.to_path_buf(),
+                    source: IoErrorNoCode::new(source),
+                }));
+            }
+        };
 
         Ok(Box::new(io::BufWriter::with_capacity(
             DEFAULT_BUFFER_SIZE,
@@ -239,17 +244,38 @@ pub fn open_output(path: Option<&Path>, config: &CliConfig) -> Result<Box<dyn io
 /// # Errors
 ///
 /// Returns an error if the file exists and overwrite isn't forced, or if creation fails.
-pub(crate) fn open_output_file(path: &Path, config: &CliConfig) -> Result<File> {
-    if path.exists() && !config.force {
-        return Err(DiagnosticCause::from(Error::OutputExists {
-            path: path.to_path_buf(),
-        }));
-    }
-
-    File::create(path).map_err(|source| {
-        DiagnosticCause::from(Error::CreateOutput {
+pub fn open_output_file(path: &Path, config: &CliConfig) -> Result<File> {
+    match open_output_file_with_options(path, config.force) {
+        Ok(file) => Ok(file),
+        Err(source) if source.kind() == io::ErrorKind::AlreadyExists && !config.force => {
+            Err(DiagnosticCause::from(Error::OutputExists {
+                path: path.to_path_buf(),
+            }))
+        }
+        Err(source) => Err(DiagnosticCause::from(Error::CreateOutput {
             path: path.to_path_buf(),
             source: IoErrorNoCode::new(source),
-        })
-    })
+        })),
+    }
+}
+
+/// Opens an output file for writing, applying `--force` overwrite semantics.
+///
+/// This is a lower-level helper used when the caller needs to keep the output as a [`File`]
+/// (e.g. to implement sparse output with `Seek`).
+///
+/// # Errors
+///
+/// Returns an error if the file exists and overwrite isn't forced, or if creation fails.
+fn open_output_file_with_options(path: &Path, force: bool) -> io::Result<File> {
+    let mut options = OpenOptions::new();
+    options.write(true);
+
+    if force {
+        options.create(true).truncate(true);
+    } else {
+        options.create_new(true);
+    }
+
+    options.open(path)
 }

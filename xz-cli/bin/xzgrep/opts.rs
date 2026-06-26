@@ -2,7 +2,7 @@
 
 use std::env;
 use std::ffi::{OsStr, OsString};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use xz_cli::has_compression_extension;
 
@@ -19,7 +19,7 @@ pub struct ParsedArgs {
     /// Options and pattern specification forwarded to the underlying `grep` invocation.
     pub grep_args: Vec<OsString>,
     /// FILE operands as provided by the user (may be empty, meaning stdin).
-    pub files: Vec<OsString>,
+    pub files: Vec<PathBuf>,
     /// Whether `--help` (or `--h*`) was requested.
     pub show_help: bool,
     /// Whether `--version` (or `--v*`) was requested.
@@ -45,8 +45,8 @@ pub fn parse_args(argv0: &OsStr, args: &[OsString]) -> Result<ParsedArgs, String
 
     let grep_program = env::var_os("GREP").unwrap_or_else(|| OsString::from("grep"));
 
-    let mut grep_args: Vec<OsString> = Vec::new();
-    let mut files: Vec<OsString> = Vec::new();
+    let mut grep_args = Vec::new();
+    let mut files = Vec::new();
     let mut show_help = false;
     let mut show_version = false;
     let mut no_filename = false;
@@ -79,7 +79,7 @@ pub fn parse_args(argv0: &OsStr, args: &[OsString]) -> Result<ParsedArgs, String
                     grep_args.push(op);
                     consumed_bare_pattern = true;
                 } else {
-                    files.push(op);
+                    files.push(PathBuf::from(op));
                 }
             }
             break;
@@ -87,7 +87,7 @@ pub fn parse_args(argv0: &OsStr, args: &[OsString]) -> Result<ParsedArgs, String
 
         // Once the (bare) PATTERN has been consumed, all remaining args are FILE operands.
         if consumed_bare_pattern || have_pat {
-            files.push(arg);
+            files.push(PathBuf::from(arg));
             continue;
         }
 
@@ -138,7 +138,7 @@ pub fn parse_args(argv0: &OsStr, args: &[OsString]) -> Result<ParsedArgs, String
         if it.peek().is_none()
             && (has_compression_extension(Path::new(&arg)) || looks_like_path_operand(&arg))
         {
-            files.push(arg);
+            files.push(PathBuf::from(arg));
             continue;
         }
         grep_args.push(OsString::from("-e"));
@@ -230,7 +230,7 @@ mod tests {
             parsed.grep_args,
             [OsString::from("-e"), OsString::from("pat")]
         );
-        assert_eq!(parsed.files, [OsString::from("f")]);
+        assert_eq!(parsed.files, [PathBuf::from("f")]);
     }
 
     /// Bare PATTERN must be wrapped with `-e`.
@@ -245,7 +245,7 @@ mod tests {
             parsed.grep_args,
             [OsString::from("-e"), OsString::from("hello")]
         );
-        assert_eq!(parsed.files, [OsString::from("file.xz")]);
+        assert_eq!(parsed.files, [PathBuf::from("file.xz")]);
     }
 
     /// `-e` should mark pattern as already provided.
@@ -269,7 +269,7 @@ mod tests {
                 OsString::from("hi")
             ]
         );
-        assert_eq!(parsed.files, [OsString::from("f.xz")]);
+        assert_eq!(parsed.files, [PathBuf::from("f.xz")]);
     }
 
     /// Missing pattern should error (unless help/version was requested).

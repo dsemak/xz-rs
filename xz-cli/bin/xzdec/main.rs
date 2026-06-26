@@ -16,7 +16,6 @@ const PROGRAM_NAME: &str = "xzdec";
 fn main() {
     let opts = XzDecOpts::parse();
     let config = opts.config();
-
     let report = run_cli(opts.files(), &config, PROGRAM_NAME);
     for diagnostic in &report.diagnostics {
         if let Some(msg) = format_diagnostic_for_stderr(config.quiet, diagnostic) {

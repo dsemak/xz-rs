@@ -17,7 +17,6 @@ const PROGRAM_NAME: &str = "lzcat";
 fn main() {
     let opts = LzCatOpts::parse();
     let config = opts.config();
-
     let report = run_cli(opts.files(), &config, PROGRAM_NAME);
     for diagnostic in &report.diagnostics {
         if let Some(msg) = format_diagnostic_for_stderr(config.quiet, diagnostic) {

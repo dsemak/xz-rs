@@ -1,5 +1,7 @@
 //! Command line argument parsing for the unxz utility.
 
+use std::path::PathBuf;
+
 use clap::Parser;
 
 use xz_cli::{parse_memory_limit, CliConfig, OperationMode};
@@ -20,7 +22,7 @@ use xz_cli::{parse_memory_limit, CliConfig, OperationMode};
 pub struct UnxzOpts {
     /// Files to decompress
     #[arg(value_name = "FILE")]
-    files: Vec<String>,
+    files: Vec<PathBuf>,
 
     /// Write to standard output and don't delete input files
     #[arg(short = 'c', long = "stdout", alias = "to-stdout")]
@@ -111,7 +113,7 @@ impl UnxzOpts {
     }
 
     /// Files supplied on the command line
-    pub fn files(&self) -> &[String] {
+    pub fn files(&self) -> &[PathBuf] {
         &self.files
     }
 }
@@ -123,7 +125,7 @@ mod tests {
     #[test]
     fn config_reflects_test_mode() {
         let opts = UnxzOpts {
-            files: vec!["test.xz".into()],
+            files: vec![PathBuf::from("test.xz")],
             stdout: false,
             force: true,
             keep: false,
@@ -148,7 +150,7 @@ mod tests {
         let opts =
             UnxzOpts::try_parse_from(["unxz", "-cvk", "-T", "4", "-M", "1M", "file.xz"]).unwrap();
 
-        assert_eq!(opts.files(), ["file.xz"]);
+        assert_eq!(opts.files(), [PathBuf::from("file.xz")]);
         assert!(opts.stdout);
         assert!(opts.keep);
         assert!(opts.verbose);
@@ -171,6 +173,6 @@ mod tests {
 
         assert!(opts.stdout);
         assert_eq!(opts.memory, Some(512 * 1024));
-        assert_eq!(opts.files(), ["file.xz"]);
+        assert_eq!(opts.files(), [PathBuf::from("file.xz")]);
     }
 }

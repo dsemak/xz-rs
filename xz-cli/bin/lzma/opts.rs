@@ -1,5 +1,7 @@
 //! Command line argument parsing for the lzma utility.
 
+use std::path::PathBuf;
+
 use clap::Parser;
 
 use xz_cli::{parse_memory_limit, CliConfig, OperationMode};
@@ -19,7 +21,7 @@ use xz_cli::{parse_memory_limit, CliConfig, OperationMode};
 pub struct LzmaOpts {
     /// Files to process
     #[arg(value_name = "FILE")]
-    pub files: Vec<String>,
+    pub files: Vec<PathBuf>,
 
     /// Force compression
     #[arg(short = 'z', long = "compress", conflicts_with_all = ["decompress", "test"])]
@@ -179,5 +181,10 @@ impl LzmaOpts {
             no_adjust: false,
             sparse: !self.no_sparse,
         }
+    }
+
+    /// Files supplied on the command line
+    pub fn files(&self) -> &[PathBuf] {
+        &self.files
     }
 }

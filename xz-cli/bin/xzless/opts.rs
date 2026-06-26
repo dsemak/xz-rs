@@ -2,6 +2,7 @@
 
 use std::env;
 use std::ffi::{OsStr, OsString};
+use std::path::PathBuf;
 
 /// Parsed command-line arguments for `xzless`.
 #[derive(Debug, Clone)]
@@ -11,7 +12,7 @@ pub struct ParsedArgs {
     /// Options forwarded to the underlying pager invocation.
     pub pager_args: Vec<OsString>,
     /// Input file operands as provided by the user.
-    pub files: Vec<OsString>,
+    pub files: Vec<PathBuf>,
     /// Whether `--help` (or `--h*`) was requested.
     pub show_help: bool,
     /// Whether `--version` (or `--v*`) was requested.
@@ -25,8 +26,8 @@ pub struct ParsedArgs {
 pub fn parse_args(args: &[OsString]) -> ParsedArgs {
     let pager_program = env::var_os("PAGER").unwrap_or_else(|| OsString::from("less"));
 
-    let mut pager_args: Vec<OsString> = Vec::new();
-    let mut files: Vec<OsString> = Vec::new();
+    let mut pager_args = Vec::new();
+    let mut files = Vec::new();
     let mut show_help = false;
     let mut show_version = false;
 
@@ -61,7 +62,7 @@ pub fn parse_args(args: &[OsString]) -> ParsedArgs {
     }
 
     for arg in it {
-        files.push(arg);
+        files.push(PathBuf::from(arg));
     }
 
     ParsedArgs {
@@ -84,7 +85,7 @@ mod tests {
         let parsed = parse_args(&args);
 
         assert!(parsed.pager_args.is_empty());
-        assert!(parsed.files == vec![OsString::from("-"), OsString::from("file.txt")]);
+        assert!(parsed.files == vec![PathBuf::from("-"), PathBuf::from("file.txt")]);
     }
 
     /// Options must be forwarded to the pager until the first operand or `--`.
@@ -99,6 +100,6 @@ mod tests {
         let parsed = parse_args(&args);
 
         assert!(parsed.pager_args == vec![OsString::from("-F")]);
-        assert!(parsed.files == vec![OsString::from("a.xz"), OsString::from("b.txt")]);
+        assert!(parsed.files == vec![PathBuf::from("a.xz"), PathBuf::from("b.txt")]);
     }
 }

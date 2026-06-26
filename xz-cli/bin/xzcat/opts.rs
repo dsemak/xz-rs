@@ -1,5 +1,7 @@
 //! Command line argument parsing for the xzcat utility.
 
+use std::path::PathBuf;
+
 use clap::Parser;
 
 use xz_cli::{parse_memory_limit, CliConfig, OperationMode};
@@ -19,7 +21,7 @@ use xz_cli::{parse_memory_limit, CliConfig, OperationMode};
 pub struct XzCatOpts {
     /// Files to decompress
     #[arg(value_name = "FILE")]
-    files: Vec<String>,
+    files: Vec<PathBuf>,
 
     /// Verbose mode
     #[arg(short = 'v', long = "verbose", conflicts_with = "quiet")]
@@ -84,7 +86,7 @@ impl XzCatOpts {
     }
 
     /// Files supplied on the command line
-    pub fn files(&self) -> &[String] {
+    pub fn files(&self) -> &[PathBuf] {
         &self.files
     }
 }
@@ -96,7 +98,7 @@ mod tests {
     #[test]
     fn config_sets_cat_mode_and_stdout() {
         let opts = XzCatOpts {
-            files: vec!["input.xz".into()],
+            files: vec![PathBuf::from("input.xz")],
             verbose: true,
             quiet: 0,
             threads: Some(4),
@@ -118,7 +120,7 @@ mod tests {
         let opts = XzCatOpts::try_parse_from(["xzcat", "-v", "-T", "2", "-M", "512K", "input.xz"])
             .unwrap();
 
-        assert_eq!(opts.files(), ["input.xz"]);
+        assert_eq!(opts.files(), [PathBuf::from("input.xz")]);
         assert!(opts.verbose);
         assert_eq!(opts.threads, Some(2));
         assert_eq!(opts.memory, Some(512 * 1024));
@@ -127,7 +129,7 @@ mod tests {
     #[test]
     fn parse_single_stream_flag() {
         let opts = XzCatOpts::try_parse_from(["xzcat", "--single-stream", "input.xz"]).unwrap();
-        assert_eq!(opts.files(), ["input.xz"]);
+        assert_eq!(opts.files(), [PathBuf::from("input.xz")]);
         assert!(opts.single_stream);
     }
 
@@ -138,7 +140,7 @@ mod tests {
             Err(e) => panic!("failed to parse aliases: {e}"),
         };
 
-        assert_eq!(opts.files(), ["input.xz"]);
+        assert_eq!(opts.files(), [PathBuf::from("input.xz")]);
         assert_eq!(opts.memory, Some(1024 * 1024));
     }
 }

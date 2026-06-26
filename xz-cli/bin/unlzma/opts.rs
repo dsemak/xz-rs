@@ -1,5 +1,7 @@
 //! Command line argument parsing for the unlzma utility.
 
+use std::path::PathBuf;
+
 use clap::Parser;
 
 use xz_cli::{parse_memory_limit, CliConfig, OperationMode};
@@ -19,7 +21,7 @@ use xz_cli::{parse_memory_limit, CliConfig, OperationMode};
 pub struct UnlzmaOpts {
     /// Files to decompress
     #[arg(value_name = "FILE")]
-    files: Vec<String>,
+    files: Vec<PathBuf>,
 
     /// Write to standard output and don't delete input files
     #[arg(short = 'c', long = "stdout", alias = "to-stdout")]
@@ -110,7 +112,7 @@ impl UnlzmaOpts {
     }
 
     /// Files supplied on the command line.
-    pub fn files(&self) -> &[String] {
+    pub fn files(&self) -> &[PathBuf] {
         &self.files
     }
 }

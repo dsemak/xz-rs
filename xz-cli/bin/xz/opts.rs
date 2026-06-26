@@ -1,5 +1,7 @@
 //! Command line argument parsing for xz utility
 
+use std::path::PathBuf;
+
 use clap::Parser;
 
 use xz_cli::{parse_memory_limit, CliConfig, OperationMode};
@@ -21,7 +23,7 @@ use xz_core::{config::DecodeMode, options::IntegrityCheck};
 pub struct XzOpts {
     /// Files to process
     #[arg(value_name = "FILE")]
-    pub files: Vec<String>,
+    pub files: Vec<PathBuf>,
 
     /// Force compression
     #[arg(short = 'z', long = "compress", conflicts_with_all = ["decompress", "test", "list"])]
@@ -180,7 +182,7 @@ pub struct XzOpts {
         default_missing_value = "-",
         conflicts_with = "files0_from_file"
     )]
-    pub files_from_file: Option<String>,
+    pub files_from_file: Option<PathBuf>,
 
     /// Read filenames from file (null-terminated)
     #[arg(
@@ -190,7 +192,7 @@ pub struct XzOpts {
         default_missing_value = "-",
         conflicts_with = "files_from_file"
     )]
-    pub files0_from_file: Option<String>,
+    pub files0_from_file: Option<PathBuf>,
 
     /// Machine-readable output
     #[arg(long = "robot")]
@@ -439,7 +441,7 @@ mod tests {
         assert!(opts.decompress);
         assert!(opts.stdout);
         assert_eq!(opts.memory, Some(1024 * 1024));
-        assert_eq!(opts.files, ["file.xz"]);
+        assert_eq!(opts.files, [PathBuf::from("file.xz")]);
     }
 
     #[test]

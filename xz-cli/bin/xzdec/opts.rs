@@ -1,5 +1,7 @@
 //! Command line argument parsing for the xzdec utility.
 
+use std::path::PathBuf;
+
 use clap::Parser;
 
 use xz_cli::{parse_memory_limit, CliConfig, OperationMode};
@@ -22,7 +24,7 @@ use xz_cli::{parse_memory_limit, CliConfig, OperationMode};
 pub struct XzDecOpts {
     /// Files to decompress
     #[arg(value_name = "FILE")]
-    files: Vec<String>,
+    files: Vec<PathBuf>,
 
     /// Ignored for xz(1) compatibility. xzdec supports only decompression.
     #[arg(short = 'd', long = "decompress", alias = "uncompress")]
@@ -92,7 +94,7 @@ impl XzDecOpts {
     }
 
     /// Files supplied on the command line
-    pub fn files(&self) -> &[String] {
+    pub fn files(&self) -> &[PathBuf] {
         &self.files
     }
 
@@ -111,7 +113,7 @@ mod tests {
     #[test]
     fn config_sets_cat_mode_and_stdout() {
         let opts = XzDecOpts {
-            files: vec!["input.xz".into()],
+            files: vec![PathBuf::from("input.xz")],
             decompress: false,
             keep: false,
             stdout: false,
@@ -133,7 +135,7 @@ mod tests {
     fn parse_from_args_reads_memory_limit() {
         let opts = XzDecOpts::try_parse_from(["xzdec", "-M", "512K", "input.xz"]).unwrap();
 
-        assert_eq!(opts.files(), ["input.xz"]);
+        assert_eq!(opts.files(), [PathBuf::from("input.xz")]);
         assert_eq!(opts.memory, Some(512 * 1024));
         assert!(!opts.is_quiet());
     }
@@ -154,7 +156,7 @@ mod tests {
         let opts =
             XzDecOpts::try_parse_from(["xzdec", "-d", "-k", "-c", "-Q", "input.xz"]).unwrap();
 
-        assert_eq!(opts.files(), ["input.xz"]);
+        assert_eq!(opts.files(), [PathBuf::from("input.xz")]);
         // These options should be parsed but ignored in behavior
         assert!(opts.decompress);
         assert!(opts.keep);
@@ -176,7 +178,7 @@ mod tests {
             Err(e) => panic!("failed to parse aliases: {e}"),
         };
 
-        assert_eq!(opts.files(), ["input.xz"]);
+        assert_eq!(opts.files(), [PathBuf::from("input.xz")]);
         assert!(opts.decompress);
         assert!(opts.stdout);
         assert_eq!(opts.memory, Some(512 * 1024));

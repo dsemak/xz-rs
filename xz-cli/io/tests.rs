@@ -8,7 +8,11 @@ use std::path::PathBuf;
 
 use tempfile::TempDir;
 
+use crate::config::CliConfig;
+use crate::error::{DiagnosticCause, Error};
+
 use super::SparseFileWriter;
+use super::{open_output, open_output_file};
 
 fn temp_file(name: &str) -> io::Result<(TempDir, PathBuf)> {
     let dir = tempfile::tempdir()?;
@@ -124,4 +128,32 @@ fn sparse_writer_handles_zero_runs_split_across_writes() {
     let mut zeros = vec![1u8; 64];
     f.read_exact(&mut zeros).unwrap();
     assert!(zeros.iter().all(|&b| b == 0));
+}
+
+/// Test that open_output rejects existing file atomically without force.
+#[test]
+fn open_output_rejects_existing_file_atomically_without_force() {
+    let (_dir, path) = temp_file("existing.tmp").unwrap();
+    std::fs::write(&path, b"existing").unwrap();
+
+    let config = CliConfig::default();
+    let err = open_output(Some(&path), &config).err().unwrap();
+    assert!(matches!(
+        err,
+        DiagnosticCause::Error(Error::OutputExists { .. })
+    ));
+}
+
+/// Test that open_output_file rejects existing file atomically without force.
+#[test]
+fn open_output_file_rejects_existing_file_atomically_without_force() {
+    let (_dir, path) = temp_file("existing-file.tmp").unwrap();
+    std::fs::write(&path, b"existing").unwrap();
+
+    let config = CliConfig::default();
+    let err = open_output_file(&path, &config).err().unwrap();
+    assert!(matches!(
+        err,
+        DiagnosticCause::Error(Error::OutputExists { .. })
+    ));
 }
