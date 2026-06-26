@@ -266,6 +266,8 @@ fn run_grep_on_compressed_file(
     if need_filename_prefix {
         cmd.arg("-H");
     }
+
+    // Compressed operands are never `-`; stdin is handled by `run_grep_on_stdin`
     if caps.supports_label {
         cmd.arg("--label");
         cmd.arg(path);

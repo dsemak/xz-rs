@@ -71,11 +71,7 @@ fn parse_nul_delimited(buf: &[u8]) -> io::Result<Vec<PathBuf>> {
     Ok(out)
 }
 
-/// Convert a byte slice to a `PathBuf`.
-///
-/// # Errors
-///
-/// Returns an error if the byte slice is not valid UTF-8.
+/// Convert a byte slice to a `PathBuf`, preserving arbitrary OS bytes on Unix.
 #[cfg(unix)]
 fn path_from_bytes(bytes: &[u8]) -> io::Result<PathBuf> {
     Ok(PathBuf::from(OsString::from_vec(bytes.to_vec())))

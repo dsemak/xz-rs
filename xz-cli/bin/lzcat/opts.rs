@@ -21,7 +21,7 @@ use xz_cli::{parse_memory_limit, CliConfig, OperationMode};
 pub struct LzCatOpts {
     /// Files to decompress
     #[arg(value_name = "FILE")]
-    files: Vec<String>,
+    files: Vec<PathBuf>,
 
     /// Verbose mode
     #[arg(short = 'v', long = "verbose", conflicts_with = "quiet")]
@@ -86,8 +86,8 @@ impl LzCatOpts {
     }
 
     /// Files supplied on the command line.
-    pub fn files(&self) -> Vec<PathBuf> {
-        self.files.iter().map(PathBuf::from).collect()
+    pub fn files(&self) -> &[PathBuf] {
+        &self.files
     }
 }
 
@@ -99,7 +99,7 @@ mod tests {
     #[test]
     fn config_uses_lzma_decode_mode() {
         let opts = LzCatOpts {
-            files: vec!["input.lzma".into()],
+            files: vec![PathBuf::from("input.lzma")],
             verbose: false,
             quiet: 0,
             threads: Some(4),

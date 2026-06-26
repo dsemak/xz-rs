@@ -24,7 +24,7 @@ use xz_cli::{parse_memory_limit, CliConfig, OperationMode};
 pub struct XzDecOpts {
     /// Files to decompress
     #[arg(value_name = "FILE")]
-    files: Vec<String>,
+    files: Vec<PathBuf>,
 
     /// Ignored for xz(1) compatibility. xzdec supports only decompression.
     #[arg(short = 'd', long = "decompress", alias = "uncompress")]
@@ -94,8 +94,8 @@ impl XzDecOpts {
     }
 
     /// Files supplied on the command line
-    pub fn files(&self) -> Vec<PathBuf> {
-        self.files.iter().map(PathBuf::from).collect()
+    pub fn files(&self) -> &[PathBuf] {
+        &self.files
     }
 
     /// Check if quiet mode is enabled (suppress errors when -q specified twice)
@@ -113,7 +113,7 @@ mod tests {
     #[test]
     fn config_sets_cat_mode_and_stdout() {
         let opts = XzDecOpts {
-            files: vec!["input.xz".into()],
+            files: vec![PathBuf::from("input.xz")],
             decompress: false,
             keep: false,
             stdout: false,

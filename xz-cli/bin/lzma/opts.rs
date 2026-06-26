@@ -21,7 +21,7 @@ use xz_cli::{parse_memory_limit, CliConfig, OperationMode};
 pub struct LzmaOpts {
     /// Files to process
     #[arg(value_name = "FILE")]
-    pub files: Vec<String>,
+    pub files: Vec<PathBuf>,
 
     /// Force compression
     #[arg(short = 'z', long = "compress", conflicts_with_all = ["decompress", "test"])]
@@ -184,7 +184,7 @@ impl LzmaOpts {
     }
 
     /// Files supplied on the command line
-    pub fn files(&self) -> Vec<PathBuf> {
-        self.files.iter().map(PathBuf::from).collect()
+    pub fn files(&self) -> &[PathBuf] {
+        &self.files
     }
 }

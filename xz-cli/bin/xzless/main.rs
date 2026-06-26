@@ -53,7 +53,7 @@ fn run() -> Result<i32, String> {
     };
 
     // stdin cannot be meaningfully consumed more than once.
-    let stdin_count = files.iter().filter(|file| *file == OsStr::new("-")).count();
+    let stdin_count = files.iter().filter(|file| *file == Path::new("-")).count();
     if stdin_count > 0 && files.len() > 1 {
         return Err("'-' can only be used as the sole input".to_string());
     }

@@ -293,6 +293,41 @@ add_test!(list_rejects_no_files_stdin, async {
     assert!(output.stderr.contains("not support"));
 });
 
+// Test that `xz --files` accepts non-UTF8 paths.
+#[cfg(unix)]
+add_test!(files_accepts_non_utf8_paths, async {
+    use std::ffi::OsString;
+    use std::path::PathBuf;
+
+    let mut fixture = Fixture::with_file("placeholder.txt", b"placeholder");
+    fixture.remove_file("placeholder.txt");
+
+    let mut input_bytes = fixture.root_dir_path().as_os_str().as_bytes().to_vec();
+    input_bytes.push(b'/');
+    input_bytes.extend_from_slice(b"bad-\xFF-name.txt");
+    let input_path = PathBuf::from(OsString::from_vec(input_bytes.clone()));
+    std::fs::write(&input_path, b"non-utf8-path-data").unwrap();
+
+    let list_path = fixture.path("files.list");
+    let mut list_content = input_bytes.clone();
+    list_content.push(b'\n');
+    std::fs::write(&list_path, &list_content).unwrap();
+
+    let output = fixture
+        .run_cargo("xz", &["--files", &list_path, "-k"])
+        .await;
+    assert!(
+        output.status.success(),
+        "xz --files failed: {}",
+        output.stderr
+    );
+
+    let mut compressed_bytes = input_path.as_os_str().as_bytes().to_vec();
+    compressed_bytes.extend_from_slice(b".xz");
+    let compressed_path = PathBuf::from(OsString::from_vec(compressed_bytes));
+    assert!(compressed_path.exists(), "compressed file was not created");
+});
+
 // Test that `xz --files0` accepts non-UTF8 paths.
 #[cfg(unix)]
 add_test!(files0_accepts_non_utf8_paths, async {

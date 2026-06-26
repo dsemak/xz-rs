@@ -22,7 +22,7 @@ use xz_cli::{parse_memory_limit, CliConfig, OperationMode};
 pub struct UnxzOpts {
     /// Files to decompress
     #[arg(value_name = "FILE")]
-    files: Vec<String>,
+    files: Vec<PathBuf>,
 
     /// Write to standard output and don't delete input files
     #[arg(short = 'c', long = "stdout", alias = "to-stdout")]
@@ -113,8 +113,8 @@ impl UnxzOpts {
     }
 
     /// Files supplied on the command line
-    pub fn files(&self) -> Vec<PathBuf> {
-        self.files.iter().map(PathBuf::from).collect()
+    pub fn files(&self) -> &[PathBuf] {
+        &self.files
     }
 }
 
@@ -125,7 +125,7 @@ mod tests {
     #[test]
     fn config_reflects_test_mode() {
         let opts = UnxzOpts {
-            files: vec!["test.xz".into()],
+            files: vec![PathBuf::from("test.xz")],
             stdout: false,
             force: true,
             keep: false,
