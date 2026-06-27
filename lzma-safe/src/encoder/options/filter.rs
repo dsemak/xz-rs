@@ -518,7 +518,7 @@ fn create_bcj_filter(
 /// # Safety
 ///
 /// The returned pointers are valid as long as the returned `RawFilters` is alive.
-pub(crate) fn prepare_filters(configs: &[FilterConfig]) -> RawFilters {
+pub fn prepare_filters(configs: &[FilterConfig]) -> RawFilters {
     // Preallocate space for the filter chain and owned option buffers.
     let mut filters = Vec::with_capacity(configs.len() + 1);
     let mut owned = Vec::with_capacity(configs.len());

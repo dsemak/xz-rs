@@ -68,9 +68,9 @@ add_test!(memory_limit_option, async {
     let file_path = fixture.path(FILE_NAME);
     let compressed_path = fixture.compressed_path(FILE_NAME);
 
-    // Test with memory limit
+    // Test with memory limit (must exceed minimum preset memory for default level)
     let output = fixture
-        .run_cargo("xz", &["-M", "1M", "-k", &file_path])
+        .run_cargo("xz", &["-M", "64M", "-k", &file_path])
         .await;
     assert!(output.status.success());
 
@@ -82,6 +82,76 @@ add_test!(memory_limit_option, async {
 
     fixture.assert_files(&[FILE_NAME], &[&data]);
 });
+
+add_test!(memlimit_compress_no_adjust_succeeds_within_limit, async {
+    const FILE_NAME: &str = "memlimit_compress_ok.txt";
+    let data = generate_random_data(KB);
+
+    let mut fixture = Fixture::with_file(FILE_NAME, &data);
+    let file_path = fixture.path(FILE_NAME);
+
+    let output = fixture
+        .run_cargo(
+            "xz",
+            &[
+                "--memlimit-compress=48MiB",
+                "--no-adjust",
+                "-T1",
+                "-4",
+                "-c",
+                &file_path,
+            ],
+        )
+        .await;
+    assert!(output.status.success());
+    assert!(!output.stdout_raw.is_empty());
+});
+
+add_test!(
+    memlimit_compress_no_adjust_fails_when_limit_too_low,
+    async {
+        const FILE_NAME: &str = "memlimit_compress_fail.txt";
+        let data = generate_random_data(KB);
+
+        let mut fixture = Fixture::with_file(FILE_NAME, &data);
+        let file_path = fixture.path(FILE_NAME);
+
+        let output = fixture
+            .run_cargo(
+                "xz",
+                &[
+                    "--memlimit-compress=1KiB",
+                    "--no-adjust",
+                    "-T1",
+                    "-9",
+                    "-c",
+                    &file_path,
+                ],
+            )
+            .await;
+        assert!(!output.status.success());
+    }
+);
+
+add_test!(
+    memlimit_compress_adjusts_settings_without_no_adjust,
+    async {
+        const FILE_NAME: &str = "memlimit_compress_adjust.txt";
+        let data = generate_random_data(KB);
+
+        let mut fixture = Fixture::with_file(FILE_NAME, &data);
+        let file_path = fixture.path(FILE_NAME);
+
+        let output = fixture
+            .run_cargo(
+                "xz",
+                &["--memlimit-compress=40MiB", "-T1", "-4", "-c", &file_path],
+            )
+            .await;
+        assert!(output.status.success());
+        assert!(!output.stdout_raw.is_empty());
+    }
+);
 
 add_test!(upstream_generated_abc_roundtrip, async {
     let data = generated_abc();

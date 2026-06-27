@@ -4,6 +4,7 @@
 //! operations, file I/O handling, and CLI configuration management. It serves as the
 //! primary interface between command-line tools and the core XZ functionality.
 
+mod memlimit;
 mod config;
 mod error;
 mod format;

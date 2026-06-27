@@ -125,7 +125,7 @@ add_test!(memory_limited_compression, async {
     let compressed_path = fixture.compressed_path(FILE_NAME);
 
     // Compress with memory limit
-    let output = fixture.run_cargo("xz", &["-M", "1M", &file_path]).await;
+    let output = fixture.run_cargo("xz", &["-M", "64M", &file_path]).await;
     assert!(output.status.success());
 
     // xzdec should decompress

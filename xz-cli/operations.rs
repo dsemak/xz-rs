@@ -9,13 +9,14 @@ use xz_core::{
     file_info,
     options::lzma1::Lzma1Options,
     options::{
-        BcjOptions, Compression, CompressionOptions, DecompressionOptions, DeltaOptions,
+        BcjOptions, Compression, DecompressionOptions, DeltaOptions,
         FilterConfig, FilterOptions, FilterType, Flags, LzmaOptions,
     },
     pipeline::{compress, decompress},
     ratio, Error as CoreError, UnknownInputPolicy,
 };
 
+use crate::memlimit::Builder;
 use crate::config::CliConfig;
 use crate::error::{DiagnosticCause, Error, IoErrorNoCode, Result, Warning};
 use crate::format::list::{self, ListOutputContext, ListSummary};
@@ -265,15 +266,15 @@ fn parse_filters_chain(
     Ok(filters)
 }
 
-/// Apply `--lzma1` overrides to compression options when encoding `.lzma` or raw streams.
+/// Apply `--lzma1` overrides to compression settings when encoding `.lzma` or raw streams.
 fn apply_lzma1_overrides(
-    mut options: CompressionOptions,
+    builder: &mut Builder,
     config: &CliConfig,
     encode_format: EncodeFormat,
     compression_level: Compression,
-) -> Result<CompressionOptions> {
+) -> Result<()> {
     let Some(raw_lzma1) = config.lzma1.as_deref() else {
-        return Ok(options);
+        return Ok(());
     };
 
     if !matches!(encode_format, EncodeFormat::Lzma | EncodeFormat::Raw) {
@@ -282,20 +283,19 @@ fn apply_lzma1_overrides(
         }));
     }
 
-    let lzma1 = build_lzma1_options(raw_lzma1, compression_level)?;
-    options = options.with_lzma1_options(Some(lzma1));
-    Ok(options)
+    builder.lzma1 = Some(build_lzma1_options(raw_lzma1, compression_level)?);
+    Ok(())
 }
 
-/// Apply `--lzma2` overrides to `.xz` compression options.
+/// Apply `--lzma2` overrides to `.xz` compression settings.
 fn apply_lzma2_overrides(
-    mut options: CompressionOptions,
+    builder: &mut Builder,
     config: &CliConfig,
     encode_format: EncodeFormat,
     compression_level: Compression,
-) -> Result<CompressionOptions> {
+) -> Result<()> {
     let Some(raw_lzma2) = config.lzma2.as_deref() else {
-        return Ok(options);
+        return Ok(());
     };
 
     if encode_format != EncodeFormat::Xz {
@@ -306,24 +306,22 @@ fn apply_lzma2_overrides(
 
     let lzma1 = build_lzma1_options(raw_lzma2, compression_level)?;
     let lzma2 = LzmaOptions::from(&lzma1);
-    let filters = vec![FilterConfig {
+    builder.filters = vec![FilterConfig {
         filter_type: FilterType::Lzma2,
         options: Some(FilterOptions::Lzma(lzma2)),
     }];
-
-    options = options.with_filters(filters);
-    Ok(options)
+    Ok(())
 }
 
-/// Apply `--filters` explicit filter-chain overrides to `.xz` compression options.
+/// Apply `--filters` explicit filter-chain overrides to `.xz` compression settings.
 fn apply_filters_override(
-    mut options: CompressionOptions,
+    builder: &mut Builder,
     config: &CliConfig,
     encode_format: EncodeFormat,
     compression_level: Compression,
-) -> Result<CompressionOptions> {
+) -> Result<()> {
     let Some(raw_filters) = config.filters.as_deref() else {
-        return Ok(options);
+        return Ok(());
     };
 
     if encode_format != EncodeFormat::Xz {
@@ -332,31 +330,28 @@ fn apply_filters_override(
         }));
     }
 
-    let filters = parse_filters_chain(raw_filters, compression_level)?;
-    options = options.with_filters(filters);
-    Ok(options)
+    builder.filters = parse_filters_chain(raw_filters, compression_level)?;
+    Ok(())
 }
 
-/// Apply `--threads` to compression options when supported by the container format.
+/// Apply `--threads` to compression settings when supported by the container format.
 fn apply_threads_for_compression(
-    mut options: CompressionOptions,
+    builder: &mut Builder,
     config: &CliConfig,
     encode_format: EncodeFormat,
-) -> Result<CompressionOptions> {
+) -> Result<()> {
     let Some(threads) = config.threads else {
-        return Ok(options);
+        return Ok(());
     };
 
     if matches!(encode_format, EncodeFormat::Lzma | EncodeFormat::Raw) {
-        // `.lzma` is always single-threaded. Keep CLI compatibility by accepting `--threads`
-        // but ignoring it for these single-threaded formats.
-        return Ok(options);
+        return Ok(());
     }
 
     let thread_count = u32::try_from(threads)
         .map_err(|_| DiagnosticCause::from(Error::InvalidThreadCount { count: threads }))?;
-    options = options.with_threads(xz_core::Threading::Exact(thread_count));
-    Ok(options)
+    builder.threads = xz_core::Threading::Exact(thread_count);
+    Ok(())
 }
 
 /// Emit verbose/robot output for a completed compression operation.
@@ -410,14 +405,15 @@ pub fn compress_file(
 
     let compression_level = resolve_compression_level(config)?;
 
-    let options = CompressionOptions::default()
-        .with_format(encode_format)
-        .with_check(config.check)
-        .with_level(compression_level);
-    let options = apply_lzma1_overrides(options, config, encode_format, compression_level)?;
-    let options = apply_lzma2_overrides(options, config, encode_format, compression_level)?;
-    let options = apply_filters_override(options, config, encode_format, compression_level)?;
-    let options = apply_threads_for_compression(options, config, encode_format)?;
+    let mut builder = Builder::new(encode_format, compression_level, config.check);
+    apply_lzma1_overrides(&mut builder, config, encode_format, compression_level)?;
+    apply_lzma2_overrides(&mut builder, config, encode_format, compression_level)?;
+    apply_filters_override(&mut builder, config, encode_format, compression_level)?;
+    apply_threads_for_compression(&mut builder, config, encode_format)?;
+    let options = builder
+        .with_memory_limit(config.compression_memory_limit)
+        .with_no_adjust(config.no_adjust)
+        .build()?;
 
     // Perform compression and handle errors
     let summary = compress(&mut input, &mut output, &options).map_err(|e| {

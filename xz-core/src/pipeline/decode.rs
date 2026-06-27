@@ -13,7 +13,7 @@ use crate::header::{
     detect_unsupported_xz_check_id, is_known_decode_format, read_decode_format_probe_prefix,
     LZIP_HEADER_MAGIC,
 };
-use crate::options::{BuiltDecoder, DecompressionOptions, Flags};
+use crate::decompression::{BuiltDecoder, Flags, Options as DecompressionOptions};
 
 /// Size of the I/O buffer used by the decoder during passthrough.
 const IO_BUFFER_SIZE: usize = 8192;

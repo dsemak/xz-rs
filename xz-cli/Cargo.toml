@@ -65,6 +65,7 @@ clap = { version = "4.0", features = ["derive", "color"] }
 thiserror = "2.0"
 tempfile = "3.8"
 tokio = { workspace = true }
+lzma-safe = { path = "../lzma-safe" }
 xz-core = { path = "../xz-core" }
 
 [dev-dependencies]

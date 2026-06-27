@@ -152,10 +152,12 @@ mod buffer;
 mod error;
 mod header;
 mod threading;
+mod util;
 
+pub mod compression;
 pub mod config;
+pub mod decompression;
 pub mod file_info;
-pub mod options;
 pub mod pipeline;
 
 pub use crate::error::{BackendError, Error, Result};
@@ -163,9 +165,20 @@ pub use crate::header::{
     detect_unsupported_xz_check_id, is_known_decode_format, read_decode_format_probe_prefix,
     LZMA_ALONE_HEADER_SIZE, XZ_STREAM_HEADER_MAGIC,
 };
-pub use crate::threading::Threading;
+pub use crate::threading::{sanitize_threads, Threading};
 pub use buffer::{Allocator, Buffer, Deallocator, DeallocatorFn, GlobalAllocator};
 pub use config::{DecompressionOutcome, DecompressionStatus, UnknownInputPolicy};
+pub use compression::Options as CompressionOptions;
+pub use decompression::Options as DecompressionOptions;
+
+/// Backward-compatible re-exports of compression and decompression option types.
+pub mod options {
+    pub use crate::compression::{
+        lzma1, BcjOptions, Compression, DeltaOptions, FilterConfig, FilterOptions, FilterType,
+        IntegrityCheck, LzmaOptions, Options as CompressionOptions,
+    };
+    pub use crate::decompression::{Flags, Options as DecompressionOptions};
+}
 
 /// Calculates the compression/decompression ratio as a percentage.
 ///

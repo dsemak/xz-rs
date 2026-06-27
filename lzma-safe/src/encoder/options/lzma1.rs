@@ -93,6 +93,12 @@ impl Lzma1Options {
 
     /// Dictionary size in bytes.
     #[must_use]
+    pub fn dict_size(&self) -> u32 {
+        self.raw.dict_size
+    }
+
+    /// Dictionary size in bytes.
+    #[must_use]
     pub fn with_dict_size(mut self, dict_size: u32) -> Self {
         self.raw.dict_size = dict_size;
         self

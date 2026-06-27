@@ -28,7 +28,7 @@ pub enum Threading {
 ///
 /// * `Ok(u32)` - A safe thread count to use
 /// * `Err(Error::InvalidThreadCount)` - If the requested thread count exceeds system limits
-pub(crate) fn sanitize_threads(threads: Threading) -> Result<u32> {
+pub fn sanitize_threads(threads: Threading) -> Result<u32> {
     let maximum = get_safe_max_threads();
     match threads {
         // Zero threads means "auto-detect"

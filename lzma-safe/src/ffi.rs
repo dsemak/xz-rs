@@ -34,6 +34,19 @@ pub(crate) fn lzma_easy_encoder(
     result_from_lzma_ret(ret, ())
 }
 
+/// Initialise a single-threaded `.xz` stream encoder via `lzma_stream_encoder`.
+pub(crate) fn lzma_stream_encoder(
+    filters: &encoder::options::RawFilters,
+    check: encoder::options::IntegrityCheck,
+    stream: &mut Stream,
+) -> Result<()> {
+    // SAFETY: `filters.as_ptr()` points at a valid, terminated filter chain.
+    let ret = unsafe {
+        liblzma_sys::lzma_stream_encoder(stream.lzma_stream(), filters.as_ptr(), check.into())
+    };
+    result_from_lzma_ret(ret, ())
+}
+
 /// Initialise a multithreaded encoder via `lzma_stream_encoder_mt`.
 pub(crate) fn lzma_stream_encoder_mt(
     config: &encoder::Options,
@@ -395,6 +408,25 @@ pub(crate) fn lzma_index_cat(
     let ret =
         unsafe { liblzma_sys::lzma_index_cat(dest.as_mut_ptr(), src.as_mut_ptr(), allocator_ptr) };
     result_from_lzma_ret(ret, ())
+}
+
+/// Estimate memory required by a single-threaded "easy" encoder preset.
+pub(crate) fn lzma_easy_encoder_memusage(level: encoder::options::Compression) -> u64 {
+    // SAFETY: liblzma validates the preset internally.
+    unsafe { liblzma_sys::lzma_easy_encoder_memusage(level.to_preset()) }
+}
+
+/// Estimate memory required by a raw filter chain.
+pub(crate) fn lzma_raw_encoder_memusage(filters: &encoder::options::RawFilters) -> u64 {
+    // SAFETY: `filters.as_ptr()` points at a valid, terminated filter chain.
+    unsafe { liblzma_sys::lzma_raw_encoder_memusage(filters.as_ptr()) }
+}
+
+/// Estimate memory required by a multithreaded encoder configuration.
+pub(crate) fn lzma_stream_encoder_mt_memusage(config: &encoder::Options) -> u64 {
+    let (mt, _prepared) = config.to_lzma_options();
+    // SAFETY: `mt` is a fully initialized `lzma_mt` struct.
+    unsafe { liblzma_sys::lzma_stream_encoder_mt_memusage(&raw const mt) }
 }
 
 /// Estimate decoder memory usage for a given compression preset.

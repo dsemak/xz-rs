@@ -1,5 +1,6 @@
 //! High-level encoder built on top of `liblzma`.
 
+use crate::ffi::lzma_raw_encoder_memusage;
 use crate::{Action, Result, Stream};
 
 mod alone;
@@ -11,6 +12,27 @@ mod tests;
 pub use alone::AloneEncoder;
 pub use options::Options;
 pub use raw::RawEncoder;
+
+/// Estimate memory required by a single-threaded "easy" encoder preset.
+pub fn easy_encoder_memusage(level: options::Compression) -> u64 {
+    crate::ffi::lzma_easy_encoder_memusage(level)
+}
+
+/// Estimate memory required by a multithreaded encoder configuration.
+pub fn mt_encoder_memusage(config: &options::Options) -> u64 {
+    crate::ffi::lzma_stream_encoder_mt_memusage(config)
+}
+
+/// Estimate memory required by a prepared raw filter chain.
+pub fn raw_encoder_memusage(filters: &options::RawFilters) -> u64 {
+    lzma_raw_encoder_memusage(filters)
+}
+
+/// Estimate memory required by a filter configuration chain.
+pub fn filters_encoder_memusage(filters: &[options::FilterConfig]) -> u64 {
+    let prepared = options::prepare_filters(filters);
+    lzma_raw_encoder_memusage(&prepared)
+}
 
 /// Safe wrapper around an `lzma_stream` configured for compression.
 pub struct Encoder {
@@ -95,6 +117,46 @@ impl Encoder {
             total_in: 0,
             total_out: 0,
             _prepared_filters: prepared_filters,
+        })
+    }
+
+    /// Creates a single-threaded `.xz` stream encoder with a custom filter chain.
+    ///
+    /// # Parameters
+    ///
+    /// * `filters` - Filter configuration chain.
+    /// * `check` - Integrity check type.
+    /// * `stream` - Stream to encode.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`crate::Error::OptionsError`] if the encoder options are invalid.
+    /// Returns [`crate::Error::MemError`] if memory allocation fails.
+    /// Returns [`crate::Error::MemLimitError`] if the memory limit is exceeded.
+    /// Returns [`crate::Error::UnsupportedCheck`] if the integrity check type is not supported.
+    /// Returns [`crate::Error::ProgError`] if the encoder is misused.
+    ///
+    /// # Returns
+    ///
+    /// Returns the new encoder if successful.
+    pub fn new_stream(
+        filters: Vec<options::FilterConfig>,
+        check: options::IntegrityCheck,
+        mut stream: Stream,
+    ) -> Result<Self> {
+        let prepared_filters = options::prepare_filters(&filters);
+        crate::ffi::lzma_stream_encoder(&prepared_filters, check, &mut stream)?;
+
+        Ok(Encoder {
+            options: Options {
+                check,
+                filters,
+                ..Default::default()
+            },
+            stream: Some(stream),
+            total_in: 0,
+            total_out: 0,
+            _prepared_filters: Some(prepared_filters),
         })
     }
 

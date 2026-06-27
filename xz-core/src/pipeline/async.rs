@@ -6,7 +6,8 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use crate::buffer::Buffer;
 use crate::config::{DecompressionOutcome, StreamSummary};
 use crate::error::{BackendError, Result};
-use crate::options::{BuiltDecoder, BuiltEncoder, CompressionOptions, DecompressionOptions};
+use crate::compression::{BuiltEncoder, Options as CompressionOptions};
+use crate::decompression::{BuiltDecoder, Options as DecompressionOptions};
 
 use super::decode::{
     passthrough_async, probe_async, DecoderSession, PrefixedAsyncReader, ReadAction, RunAction,
