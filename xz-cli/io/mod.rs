@@ -55,7 +55,6 @@ fn format_compression_suffixes(default_extension: &str) -> &'static [&'static st
 /// * `input` - The input file path
 /// * `mode` - The operation mode
 /// * `suffix` - Optional custom suffix for compression (e.g., ".myext")
-/// * `force` - Whether to allow compression even if file already has target suffix
 ///
 /// # Returns
 ///
@@ -67,13 +66,12 @@ fn format_compression_suffixes(default_extension: &str) -> &'static [&'static st
 ///
 /// - Decompression mode: Input file lacks a recognized compression extension
 /// - Decompression mode: Cannot determine a valid file stem from the input path
-/// - Compression mode: File already has target suffix (unless force is true)
+/// - Compression mode: File already has a format-specific or custom suffix
 pub fn generate_output_filename(
     input: &Path,
     mode: OperationMode,
     suffix: Option<&str>,
     default_extension: &str,
-    force: bool,
 ) -> Result<PathBuf> {
     match mode {
         OperationMode::Compress => {
@@ -83,25 +81,23 @@ pub fn generate_output_filename(
 
             // Refuse to compress files that already have a format-specific suffix,
             // and (when --suffix is set) files that already have the custom suffix.
-            if !force {
-                if let Some(file_name) = input.file_name().and_then(OsStr::to_str) {
-                    for known_suffix in format_compression_suffixes(default_extension) {
-                        if file_name.ends_with(known_suffix) {
-                            return Err(DiagnosticCause::from(Warning::AlreadyHasSuffix {
-                                path: input.to_path_buf(),
-                                suffix: (*known_suffix).to_string(),
-                            }));
-                        }
+            if let Some(file_name) = input.file_name().and_then(OsStr::to_str) {
+                for known_suffix in format_compression_suffixes(default_extension) {
+                    if file_name.ends_with(known_suffix) {
+                        return Err(DiagnosticCause::from(Warning::AlreadyHasSuffix {
+                            path: input.to_path_buf(),
+                            suffix: (*known_suffix).to_string(),
+                        }));
                     }
+                }
 
-                    if suffix.is_some() {
-                        let target_suffix = format!(".{extension}");
-                        if file_name.ends_with(&target_suffix) {
-                            return Err(DiagnosticCause::from(Warning::AlreadyHasSuffix {
-                                path: input.to_path_buf(),
-                                suffix: target_suffix,
-                            }));
-                        }
+                if suffix.is_some() {
+                    let target_suffix = format!(".{extension}");
+                    if file_name.ends_with(&target_suffix) {
+                        return Err(DiagnosticCause::from(Warning::AlreadyHasSuffix {
+                            path: input.to_path_buf(),
+                            suffix: target_suffix,
+                        }));
                     }
                 }
             }

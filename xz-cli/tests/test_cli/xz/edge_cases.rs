@@ -192,14 +192,13 @@ add_test!(already_compressed, async {
 
     let compressed_path = fixture.compressed_path(FILE_NAME);
 
-    // Try to compress again (should work with -f)
+    // Re-compressing in file mode is rejected even with -f (like upstream xz).
     let output = fixture
         .run_cargo("xz", &["-f", "-k", &compressed_path])
         .await;
-    assert!(output.status.success());
-
-    // Should create .xz.xz file
-    assert!(fixture.file_exists(&format!("{FILE_NAME}.xz.xz")));
+    assert!(!output.status.success());
+    assert!(output.stderr.contains("Already has `.xz` suffix, skipping"));
+    assert!(!fixture.file_exists(&format!("{FILE_NAME}.xz.xz")));
 });
 
 // Test decompression of non-existent file

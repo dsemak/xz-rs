@@ -137,7 +137,6 @@ pub fn process_file(input_path: &Path, config: &CliConfig) -> Result<()> {
             config.mode,
             config.suffix.as_deref(),
             default_extension,
-            config.force,
         )?)
     };
 

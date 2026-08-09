@@ -471,10 +471,9 @@ add_test!(already_xz_extension, async {
 
     // Compress file that already has .xz extension
     let output = fixture.run_cargo("xz", &["-f", "-k", &file_path]).await;
-    assert!(output.status.success());
-
-    // Should create .xz.xz
-    assert!(fixture.file_exists("file.xz.xz"));
+    assert!(!output.status.success());
+    assert!(output.stderr.contains("Already has `.xz` suffix, skipping"));
+    assert!(!fixture.file_exists("file.xz.xz"));
 });
 
 // Test Unicode filename

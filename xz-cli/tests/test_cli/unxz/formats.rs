@@ -1,5 +1,7 @@
+use std::fs;
+
 use crate::add_test;
-use crate::common::{Fixture, SAMPLE_TEXT};
+use crate::common::{BinaryType, Fixture, SAMPLE_TEXT};
 
 // Test unxz with .xz extension
 add_test!(xz_extension, async {
@@ -201,9 +203,18 @@ add_test!(double_compression, async {
     let output = fixture.run_cargo("xz", &[&file_path]).await;
     assert!(output.status.success());
 
-    // Second compression
-    let output = fixture.run_cargo("xz", &["-f", &compressed_path]).await;
+    // Double-compress via stdout; file mode rejects .xz inputs even with -f.
+    let compressed_bytes = fs::read(&compressed_path).unwrap();
+    let output = fixture
+        .run_with_stdin_raw(BinaryType::cargo("xz"), &["-c"], &compressed_bytes)
+        .await;
     assert!(output.status.success());
+    fs::write(
+        fixture.path(&format!("{FILE_NAME}.xz.xz")),
+        &output.stdout_raw,
+    )
+    .unwrap();
+    fixture.remove_file(&format!("{FILE_NAME}.xz"));
     assert!(fixture.file_exists(&format!("{FILE_NAME}.xz.xz")));
 
     // First decompression
