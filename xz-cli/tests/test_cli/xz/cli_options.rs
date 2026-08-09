@@ -576,25 +576,30 @@ add_test!(custom_suffix_with_dot, async {
 add_test!(custom_suffix_already_present, async {
     const FILE_NAME: &str = "already.xz";
     const CUSTOM_SUFFIX: &str = "custom";
+    const CUSTOM_FILE: &str = "test.custom";
     let data = generate_random_data(KB);
 
-    let mut fixture = Fixture::with_file(FILE_NAME, &data);
+    let mut fixture = Fixture::with_files(&[FILE_NAME, CUSTOM_FILE], &[&data, &data]);
     let file_path = fixture.path(FILE_NAME);
+    let custom_path = fixture.path(CUSTOM_FILE);
 
     // Try to compress a file that already has .xz extension
     let output = fixture.run_cargo("xz", &["-k", &file_path]).await;
     // Should fail with a warning
     assert!(!output.status.success());
 
-    // Now test with custom suffix
-    let custom_file = "test.custom";
-    fixture = Fixture::with_file(custom_file, &data);
-    let custom_path = fixture.path(custom_file);
-
     let output = fixture
         .run_cargo("xz", &["-S", CUSTOM_SUFFIX, "-k", &custom_path])
         .await;
     assert!(!output.status.success());
+
+    // File with .xz extension should be rejected even with a different custom suffix.
+    let output = fixture
+        .run_cargo("xz", &["-S", "newxz", "-k", &file_path])
+        .await;
+    assert!(!output.status.success());
+    assert!(output.stderr.contains("Already has `.xz` suffix, skipping"));
+    assert!(!fixture.file_exists("already.xz.newxz"));
 });
 
 // Test --single-stream option decompresses only the first stream

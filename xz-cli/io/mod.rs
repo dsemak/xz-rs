@@ -36,6 +36,18 @@ pub fn has_compression_extension(path: &Path) -> bool {
     }
 }
 
+/// Returns the compression suffixes that are rejected when compressing a file.
+///
+/// Matches upstream xz: format-specific suffixes are always checked, even when
+/// a custom `--suffix` is specified.
+fn format_compression_suffixes(default_extension: &str) -> &'static [&'static str] {
+    if default_extension == LZMA_EXTENSION {
+        &[".lzma", ".tlz"]
+    } else {
+        &[".xz", ".txz"]
+    }
+}
+
 /// Generates an output filename based on input path and operation mode.
 ///
 /// # Parameters
@@ -69,15 +81,27 @@ pub fn generate_output_filename(
             // Strip leading dot from suffix if present
             let extension = suffix.map_or(default_extension, |s| s.strip_prefix('.').unwrap_or(s));
 
-            // Check if the file already has the target suffix (unless force is enabled)
+            // Refuse to compress files that already have a format-specific suffix,
+            // and (when --suffix is set) files that already have the custom suffix.
             if !force {
                 if let Some(file_name) = input.file_name().and_then(OsStr::to_str) {
-                    let target_suffix = format!(".{extension}");
-                    if file_name.ends_with(&target_suffix) {
-                        return Err(DiagnosticCause::from(Warning::AlreadyHasSuffix {
-                            path: input.to_path_buf(),
-                            suffix: target_suffix,
-                        }));
+                    for known_suffix in format_compression_suffixes(default_extension) {
+                        if file_name.ends_with(known_suffix) {
+                            return Err(DiagnosticCause::from(Warning::AlreadyHasSuffix {
+                                path: input.to_path_buf(),
+                                suffix: (*known_suffix).to_string(),
+                            }));
+                        }
+                    }
+
+                    if suffix.is_some() {
+                        let target_suffix = format!(".{extension}");
+                        if file_name.ends_with(&target_suffix) {
+                            return Err(DiagnosticCause::from(Warning::AlreadyHasSuffix {
+                                path: input.to_path_buf(),
+                                suffix: target_suffix,
+                            }));
+                        }
                     }
                 }
             }

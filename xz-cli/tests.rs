@@ -339,6 +339,51 @@ fn generate_output_filename_compress_already_has_suffix() {
     ));
 }
 
+/// Test compression fails when file has format suffix but custom --suffix is set
+#[test]
+fn generate_output_filename_compress_already_has_format_suffix_with_custom() {
+    let input = Path::new("test.txt.xz");
+    let result = generate_output_filename(
+        input,
+        OperationMode::Compress,
+        Some("newxz"),
+        XZ_EXTENSION,
+        false,
+    );
+    assert!(result.is_err());
+    assert!(matches!(
+        result,
+        Err(DiagnosticCause::Warning(Warning::AlreadyHasSuffix {
+            suffix,
+            ..
+        })) if suffix == ".xz"
+    ));
+
+    let input = Path::new("archive.txz");
+    let result =
+        generate_output_filename(input, OperationMode::Compress, None, XZ_EXTENSION, false);
+    assert!(result.is_err());
+    assert!(matches!(
+        result,
+        Err(DiagnosticCause::Warning(Warning::AlreadyHasSuffix {
+            suffix,
+            ..
+        })) if suffix == ".txz"
+    ));
+
+    // .lzma is not a format suffix for xz; compressing with a custom suffix is allowed.
+    let input = Path::new("test.lzma");
+    let output = generate_output_filename(
+        input,
+        OperationMode::Compress,
+        Some("newxz"),
+        XZ_EXTENSION,
+        false,
+    )
+    .unwrap();
+    assert_eq!(output, PathBuf::from("test.lzma.newxz"));
+}
+
 /// Test compression with force flag allows files with target suffix
 #[test]
 fn generate_output_filename_compress_force_allows_suffix() {
