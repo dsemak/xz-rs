@@ -65,9 +65,15 @@ impl AloneEncoder {
         let input_before = stream.avail_in();
         let output_before = stream.avail_out();
 
-        let result = crate::ffi::lzma_code(&mut stream, action);
+        let mut result = crate::ffi::lzma_code(&mut stream, action);
         let bytes_read = input_before - stream.avail_in();
         let bytes_written = output_before - stream.avail_out();
+
+        // liblzma can return `LZMA_BUF_ERROR` even after making progress (e.g. output buffer is
+        // full). Treat that as a successful partial write so the caller can retry.
+        if matches!(result, Err(Error::BufError)) && (bytes_read != 0 || bytes_written != 0) {
+            result = Ok(());
+        }
 
         self.total_in = stream.total_in();
         self.total_out = stream.total_out();

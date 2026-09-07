@@ -293,6 +293,49 @@ fn encoder_handles_insufficient_output_buffer() {
     assert!(bytes_written <= small_buffer.len());
 }
 
+/// Test encoder works with small output buffers, including `LZMA_BUF_ERROR` after progress.
+#[test]
+fn encoder_small_output_buffer_progress() {
+    let mut encoder = Stream::default()
+        .easy_encoder(Compression::Level1, IntegrityCheck::Crc32)
+        .unwrap();
+
+    let mut remaining = TEST_DATA;
+    let mut scratch = vec![0u8; 8];
+    let mut compressed = Vec::new();
+
+    while !remaining.is_empty() {
+        let (read, written) = encoder
+            .process(remaining, &mut scratch, Action::Run)
+            .unwrap();
+        compressed.extend_from_slice(&scratch[..written]);
+        remaining = &remaining[read..];
+
+        if read == 0 && written == 0 {
+            break;
+        }
+    }
+
+    while !encoder.is_finished() {
+        let (read, written) = encoder.process(&[], &mut scratch, Action::Finish).unwrap();
+        compressed.extend_from_slice(&scratch[..written]);
+
+        if read == 0 && written == 0 {
+            assert!(encoder.is_finished());
+        }
+    }
+
+    let mut decoder = Stream::default().decoder(u64::MAX, Flags::empty()).unwrap();
+    let mut output = vec![0u8; TEST_DATA.len() * 2];
+    let (read, written) = decoder
+        .process(&compressed, &mut output, Action::Finish)
+        .unwrap();
+
+    assert_eq!(read, compressed.len());
+    assert_eq!(written, TEST_DATA.len());
+    assert_eq!(&output[..written], TEST_DATA);
+}
+
 /// Test encoder behavior with empty input data.
 #[test]
 fn encoder_handles_empty_input() {

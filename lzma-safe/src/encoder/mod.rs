@@ -146,9 +146,17 @@ impl Encoder {
         let input_before = stream.avail_in();
         let output_before = stream.avail_out();
 
-        let result = crate::ffi::lzma_code(&mut stream, action);
+        let mut result = crate::ffi::lzma_code(&mut stream, action);
         let bytes_read = input_before - stream.avail_in();
         let bytes_written = output_before - stream.avail_out();
+
+        // liblzma can return `LZMA_BUF_ERROR` even after making progress (e.g. output buffer is
+        // full). In that case, treat it as "encoding continues" and let the caller retry with a
+        // fresh output buffer (or more input).
+        if matches!(result, Err(crate::Error::BufError)) && (bytes_read != 0 || bytes_written != 0)
+        {
+            result = Ok(());
+        }
 
         // Update total bytes processed.
         self.total_in = stream.total_in();
