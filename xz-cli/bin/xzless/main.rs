@@ -103,15 +103,16 @@ fn print_version() {
 
 /// Prepare an input path suitable for the pager.
 ///
-/// If the input looks like a supported compressed file, it is decompressed into
-/// a temporary file and that temporary path is returned. Otherwise, the original
-/// path is returned.
+/// Compressed files and stdin are decompressed into a temporary file (stdin uses
+/// `xz -cdf`-style passthrough for uncompressed data). Plain named files are
+/// returned unchanged.
 fn prepare_input_for_pager(
     file: &Path,
     config: &CliConfig,
     temps: &mut Vec<NamedTempFile>,
 ) -> Result<PathBuf, String> {
-    if !has_compression_extension(file) {
+    let is_stdin = file == Path::new("-");
+    if !is_stdin && !has_compression_extension(file) {
         return Ok(file.to_path_buf());
     }
 
@@ -119,11 +120,15 @@ fn prepare_input_for_pager(
 
     let tmp = NamedTempFile::new().map_err(|err| err.to_string())?;
     {
-        // `xzless` always reads from named files here, never stdin.
-        let stdin_input = false;
+        // `stdout: true` + `stdin_input` enables UnknownInputPolicy::Passthrough
+        // inside `decompress_file`, matching upstream `xz -cdf` on stdin.
+        let mut decompress_config = config.clone();
+        if is_stdin {
+            decompress_config.stdout = true;
+        }
 
         let mut out = File::create(tmp.path()).map_err(|err| err.to_string())?;
-        decompress_file(&mut input, &mut out, config, stdin_input)
+        decompress_file(&mut input, &mut out, &decompress_config, is_stdin)
             .map_err(|err| err.to_string())?;
     }
 

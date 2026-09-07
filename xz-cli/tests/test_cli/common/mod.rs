@@ -502,6 +502,28 @@ impl Fixture {
         output
     }
 
+    /// Run a binary with raw stdin bytes and environment variables.
+    pub async fn run_with_stdin_raw_env(
+        &mut self,
+        binary_type: BinaryType,
+        args: &[&str],
+        stdin: &[u8],
+        env_vars: &[(&str, &str)],
+    ) -> Output {
+        let (kill_sender, kill_receiver) = oneshot::channel();
+        let output = self
+            .run_until_killed(
+                &binary_type,
+                args,
+                env_vars,
+                Some(stdin.to_vec()),
+                kill_receiver,
+            )
+            .await;
+        drop(kill_sender);
+        output
+    }
+
     /// Run a cargo binary with command-specific environment variables.
     pub async fn run_cargo_with_env(
         &mut self,

@@ -1,5 +1,5 @@
 use crate::add_test;
-use crate::common::Fixture;
+use crate::common::{BinaryType, Fixture};
 
 // Basic match and non-match exit codes.
 add_test!(exit_codes_match_and_no_match, async {
@@ -46,4 +46,41 @@ add_test!(multiple_files_prefix_filenames, async {
     // Full paths are used as labels; ensure both files appear.
     assert!(out.stdout.contains(&format!("{a_xz}:foo")));
     assert!(out.stdout.contains(&format!("{b_xz}:foo")));
+});
+
+// Compressed stdin must be decompressed before grep sees it.
+add_test!(stdin_decompresses_before_grep, async {
+    let mut fixture = Fixture::with_file("stdin-anchor.txt", b"anchor");
+
+    let compressed = fixture
+        .run_with_stdin_raw(BinaryType::cargo("xz"), &["-c"], b"hello world\n")
+        .await;
+    assert!(compressed.status.success());
+    assert!(!compressed.stdout_raw.is_empty());
+
+    let out = fixture
+        .run_with_stdin_raw(
+            BinaryType::cargo("xzgrep"),
+            &["hello", "-"],
+            &compressed.stdout_raw,
+        )
+        .await;
+    assert!(out.status.success());
+    assert!(out.stdout.contains("hello world"));
+    assert!(!out.stdout.contains("\u{fd}7zXZ"));
+});
+
+// Uncompressed stdin still works via xz -cdf passthrough.
+add_test!(stdin_passthrough_uncompressed, async {
+    let mut fixture = Fixture::with_file("stdin-anchor.txt", b"anchor");
+
+    let out = fixture
+        .run_with_stdin_raw(
+            BinaryType::cargo("xzgrep"),
+            &["hello", "-"],
+            b"hello world\n",
+        )
+        .await;
+    assert!(out.status.success());
+    assert!(out.stdout.contains("hello world"));
 });

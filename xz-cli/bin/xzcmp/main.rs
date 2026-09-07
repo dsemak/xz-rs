@@ -92,21 +92,16 @@ fn print_version() {
 
 /// Prepare a path suitable for `cmp`.
 ///
-/// If the input looks like a supported compressed file, it is decompressed into a temporary
-/// file and the temporary file path is returned. Otherwise the original path is returned.
+/// Compressed files and stdin are decompressed into a temporary file (stdin uses
+/// `xz -cdf`-style passthrough for uncompressed data). Plain named files are
+/// returned unchanged.
 fn materialize_for_cmp(
     path: &Path,
     config: &CliConfig,
     temps: &mut Vec<NamedTempFile>,
 ) -> Result<PathBuf, String> {
-    if path == Path::new("-") {
-        // Supporting '-' is best-effort: allow it only for one side, and pass it to cmp.
-        // Decompression from stdin is supported by the decompressor, but cmp consumes stdin
-        // too; mixing both reliably is tricky, so we don't attempt it here.
-        return Ok(PathBuf::from("-"));
-    }
-
-    if !has_compression_extension(path) {
+    let is_stdin = path == Path::new("-");
+    if !is_stdin && !has_compression_extension(path) {
         return Ok(path.to_path_buf());
     }
 
@@ -114,12 +109,16 @@ fn materialize_for_cmp(
 
     let tmp = NamedTempFile::new().map_err(|e| e.to_string())?;
     {
-        // `xzcmp` always reads from named paths here; stdin is passed through
-        // directly to `cmp` without going through the decompressor.
-        let stdin_input = false;
+        // Materialize stdin to a tempfile so `cmp` never races us for the pipe.
+        // `stdout: true` + `stdin_input` enables UnknownInputPolicy::Passthrough.
+        let mut decompress_config = config.clone();
+        if is_stdin {
+            decompress_config.stdout = true;
+        }
 
         let mut out = File::create(tmp.path()).map_err(|e| e.to_string())?;
-        decompress_file(&mut input, &mut out, config, stdin_input).map_err(|e| e.to_string())?;
+        decompress_file(&mut input, &mut out, &decompress_config, is_stdin)
+            .map_err(|e| e.to_string())?;
     }
 
     let out_path = tmp.path().to_path_buf();

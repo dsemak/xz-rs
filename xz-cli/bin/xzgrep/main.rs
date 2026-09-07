@@ -14,6 +14,7 @@ use xz_core::{
     config::DecodeMode,
     options::{DecompressionOptions, Flags},
     pipeline,
+    UnknownInputPolicy,
 };
 
 const PROGRAM_NAME: &str = "xzgrep";
@@ -203,25 +204,56 @@ fn classify_input(file: &Path) -> InputKind {
     }
 }
 
-/// Run `grep` directly on stdin (pass-through).
+/// Decompress stdin (with passthrough for uncompressed data) and stream into `grep`.
+///
+/// Mirrors upstream `xzgrep`, which always runs `xz -cdf` before piping to grep.
 fn run_grep_on_stdin(
     grep_program: &OsStr,
     grep_base_args: &[OsString],
     grep_args: &[OsString],
     need_filename_prefix: bool,
 ) -> Result<i32, String> {
+    let mut input = open_input(Path::new("-")).map_err(|err| err.to_string())?;
+
     let mut cmd = Command::new(grep_program);
     cmd.args(grep_base_args);
     cmd.args(grep_args);
     if need_filename_prefix {
+        // Upstream leaves stdin naming to grep (no `--label` for `-`).
         cmd.arg("-H");
     }
     cmd.arg("--");
     cmd.arg("-");
-    cmd.stdin(Stdio::inherit());
+    cmd.stdin(Stdio::piped());
     cmd.stdout(Stdio::inherit());
     cmd.stderr(Stdio::inherit());
-    let status = cmd.status().map_err(|e| e.to_string())?;
+
+    let mut child = cmd.spawn().map_err(|e| e.to_string())?;
+
+    let Some(mut child_stdin) = child.stdin.take() else {
+        return Err("internal error: missing grep stdin pipe".to_string());
+    };
+
+    let options = DecompressionOptions::default()
+        .with_mode(DecodeMode::Auto)
+        .with_flags(Flags::CONCATENATED)
+        .with_unknown_input_policy(UnknownInputPolicy::Passthrough);
+
+    let decompression = pipeline::decompress(&mut *input, &mut child_stdin, &options);
+    match decompression {
+        Ok(_) => {}
+        Err(xz_core::Error::Io(err)) if err.kind() == io::ErrorKind::BrokenPipe => {
+            // Grep may exit early (e.g. `-q`), which closes its stdin.
+        }
+        Err(err) => {
+            drop(child_stdin);
+            let _ = child.wait();
+            return Err(format!("(standard input): {err}"));
+        }
+    }
+
+    drop(child_stdin);
+    let status = child.wait().map_err(|e| e.to_string())?;
     Ok(status.code().unwrap_or(2))
 }
 

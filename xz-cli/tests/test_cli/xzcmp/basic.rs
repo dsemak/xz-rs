@@ -1,5 +1,5 @@
 use crate::add_test;
-use crate::common::Fixture;
+use crate::common::{BinaryType, Fixture};
 
 // Test xzcmp exit codes for equal and different contents.
 add_test!(exit_codes_equal_and_different, async {
@@ -48,5 +48,28 @@ add_test!(single_operand_comparison, async {
 
     let file_xz = fixture.compressed_path(FILE);
     let out = fixture.run_cargo("xzcmp", &[&file_xz]).await;
+    assert!(out.status.success());
+});
+
+// Compressed stdin must be decompressed before cmp sees it.
+add_test!(stdin_decompresses_before_cmp, async {
+    const FILE: &str = "plain.txt";
+    let contents = b"hello world\n";
+
+    let mut fixture = Fixture::with_file(FILE, contents);
+    let file_path = fixture.path(FILE);
+
+    let compressed = fixture
+        .run_with_stdin_raw(BinaryType::cargo("xz"), &["-c"], contents)
+        .await;
+    assert!(compressed.status.success());
+
+    let out = fixture
+        .run_with_stdin_raw(
+            BinaryType::cargo("xzcmp"),
+            &["-", &file_path],
+            &compressed.stdout_raw,
+        )
+        .await;
     assert!(out.status.success());
 });
